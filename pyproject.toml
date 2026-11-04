@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-langflow"
+version = "0.1.0"
+description = "TypeSafe JEV & Local KEV System 1 visual components and parallel evaluation flows for Langflow"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Mahan" }
+]
+keywords = [
+    "langflow",
+    "jev",
+    "kev",
+    "system-1",
+    "classification",
+    "llm",
+    "routing",
+    "agentic-ai",
+    "typesafe"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "httpx>=0.24.0",
+    "pandas>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mahan2079/JEV_Langflow"
+Repository = "https://github.com/mahan2079/JEV_Langflow"

@@ -1,0 +1,2280 @@
+{
+  "name": "JEV Multi-Question Decision & Routing Pipeline",
+  "description": "End-to-end example workflow chaining Choice, Noul (Yes/No), and Score questions into JEV System 1 Core Engine with question-level routing extractors.",
+  "data": {
+    "nodes": [
+      {
+        "data": {
+          "id": "KevChoiceQuestionNode-I1qyo",
+          "type": "KevChoiceQuestionNode",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "upstream_questions": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": true,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "upstream_questions",
+                "value": "",
+                "display_name": "Chain Previous Questions (Optional)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "choice_options_table": {
+                "tool_mode": false,
+                "is_list": true,
+                "list_add_label": "Add More",
+                "table_schema": [
+                  {
+                    "name": "option_key",
+                    "display_name": "Option Key",
+                    "type": "str",
+                    "description": "Option name sent to Kev (e.g., billing, technical, account)",
+                    "formatter": "text"
+                  },
+                  {
+                    "name": "description",
+                    "display_name": "What It Covers (Description)",
+                    "type": "str",
+                    "description": "Description of what belongs in this option (leave blank for null)",
+                    "formatter": "text"
+                  },
+                  {
+                    "name": "not_for",
+                    "display_name": "Not For / Exclusions (Optional)",
+                    "type": "str",
+                    "description": "Optional boundary rule for what does NOT belong in this option",
+                    "formatter": "text"
+                  },
+                  {
+                    "name": "route_alias",
+                    "display_name": "Custom Route Alias (Optional)",
+                    "type": "str",
+                    "description": "Optional custom label emitted on the Router if this option wins",
+                    "formatter": "text"
+                  }
+                ],
+                "trigger_text": "Open table",
+                "trigger_icon": "Table",
+                "table_icon": "Table",
+                "trace_as_metadata": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "choice_options_table",
+                "value": [
+                  {
+                    "option_key": "billing",
+                    "description": "Charges, refunds, invoices, payment failures, and plan changes.",
+                    "not_for": "",
+                    "route_alias": ""
+                  },
+                  {
+                    "option_key": "technical",
+                    "description": "Bugs, crashes, API errors, outages, and SSO/SCIM integrations.",
+                    "not_for": "",
+                    "route_alias": ""
+                  },
+                  {
+                    "option_key": "account",
+                    "description": "Login issues, password resets, profile updates, and team permissions.",
+                    "not_for": "SSO or SCIM setup, which goes to technical.",
+                    "route_alias": ""
+                  },
+                  {
+                    "option_key": "needs_review",
+                    "description": "Ambiguous, multi-issue, or out-of-scope requests needing human triage.",
+                    "not_for": "",
+                    "route_alias": ""
+                  }
+                ],
+                "display_name": "Choice Options Table",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "DataFrame",
+                  "Table"
+                ],
+                "dynamic": false,
+                "info": "Define your mutually exclusive options. Leave 'description' blank to send null when 'option_key' is self-explanatory. Fill 'not_for' to auto-build structured boundary criteria.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "table",
+                "_input_type": "TableInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    DataInput,\n    FloatInput,\n    MultilineInput,\n    Output,\n    StrInput,\n    TableInput,\n)\nfrom lfx.schema.data import Data\n\n\nclass KevChoiceQuestionNode(Component):\n    \"\"\"Visual GUI Builder for a Kev/Jev System 1 'choice' (Categorical Selection) Question.\"\"\"\n\n    display_name: str = \"Kev Choice Question (GUI)\"\n    description: str = (\n        \"Visual builder for a Choice question (1 to 255 mutually exclusive options). \"\n        \"Configure option keys, descriptions, and exclusion rules via a GUI table.\"\n    )\n    icon: str = \"ListFilter\"\n    name: str = \"KevChoiceQuestionNode\"\n\n    inputs = [\n        StrInput(\n            name=\"question_id\",\n            display_name=\"Question ID\",\n            value=\"department\",\n            info=\"Unique identifier for this Choice question (e.g., 'department', 'intent', 'topic').\",\n            required=True,\n        ),\n        MultilineInput(\n            name=\"instructions\",\n            display_name=\"Choice Question / Instructions\",\n            value=\"Which team should handle this customer request?\",\n            info=\"Natural-language question telling Kev how to pick among the options below.\",\n            required=True,\n        ),\n        TableInput(\n            name=\"choice_options_table\",\n            display_name=\"Choice Options Table\",\n            info=(\n                \"Define your mutually exclusive options. Leave 'description' blank to send null \"\n                \"when 'option_key' is self-explanatory. Fill 'not_for' to auto-build structured boundary criteria.\"\n            ),\n            table_schema=[\n                {\n                    \"name\": \"option_key\",\n                    \"display_name\": \"Option Key\",\n                    \"type\": \"str\",\n                    \"description\": \"Option name sent to Kev (e.g., billing, technical, account)\",\n                },\n                {\n                    \"name\": \"description\",\n                    \"display_name\": \"What It Covers (Description)\",\n                    \"type\": \"str\",\n                    \"description\": \"Description of what belongs in this option (leave blank for null)\",\n                },\n                {\n                    \"name\": \"not_for\",\n                    \"display_name\": \"Not For / Exclusions (Optional)\",\n                    \"type\": \"str\",\n                    \"description\": \"Optional boundary rule for what does NOT belong in this option\",\n                },\n                {\n                    \"name\": \"route_alias\",\n                    \"display_name\": \"Custom Route Alias (Optional)\",\n                    \"type\": \"str\",\n                    \"description\": \"Optional custom label emitted on the Router if this option wins\",\n                },\n            ],\n            value=[\n                {\n                    \"option_key\": \"billing\",\n                    \"description\": \"Charges, refunds, invoices, payment failures, and plan changes.\",\n                    \"not_for\": \"\",\n                    \"route_alias\": \"\",\n                },\n                {\n                    \"option_key\": \"technical\",\n                    \"description\": \"Bugs, crashes, API errors, outages, and SSO/SCIM integrations.\",\n                    \"not_for\": \"\",\n                    \"route_alias\": \"\",\n                },\n                {\n                    \"option_key\": \"account\",\n                    \"description\": \"Login issues, password resets, profile updates, and team permissions.\",\n                    \"not_for\": \"SSO or SCIM setup, which goes to technical.\",\n                    \"route_alias\": \"\",\n                },\n                {\n                    \"option_key\": \"needs_review\",\n                    \"description\": \"Ambiguous, multi-issue, or out-of-scope requests needing human triage.\",\n                    \"not_for\": \"\",\n                    \"route_alias\": \"\",\n                },\n            ],\n            required=True,\n        ),\n        FloatInput(\n            name=\"min_confidence\",\n            display_name=\"Minimum Confidence Threshold\",\n            value=0.65,\n            info=\"If Kev's choice confidence is below this cutoff, the question routes to Low-Confidence Label.\",\n            advanced=False,\n        ),\n        StrInput(\n            name=\"low_confidence_label\",\n            display_name=\"Low-Confidence Fallback Label\",\n            value=\"HUMAN_REVIEW\",\n            info=\"Route label emitted when confidence is below Minimum Confidence Threshold.\",\n            advanced=False,\n        ),\n        DataInput(\n            name=\"upstream_questions\",\n            display_name=\"Chain Previous Questions (Optional)\",\n            info=\"Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.\",\n            is_list=True,\n            required=False,\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Choice Question Spec\",\n            name=\"question_spec_out\",\n            method=\"build_choice_question\",\n        ),\n    ]\n\n    def build_choice_question(self) -> Data:\n        q_id = (self.question_id or \"choice_question\").strip() or \"choice_question\"\n        instr = (self.instructions or \"\").strip()\n        if not instr:\n            raise ValueError(f\"Instructions cannot be empty in Kev Choice Question '{q_id}'.\")\n\n        rows = self.choice_options_table or []\n        criteria_map: dict[str, Any] = {}\n        route_aliases: dict[str, str] = {}\n\n        for row in rows:\n            if not isinstance(row, dict):\n                continue\n            key = str(row.get(\"option_key\") or \"\").strip()\n            if not key:\n                continue\n            desc = str(row.get(\"description\") or \"\").strip()\n            not_for = str(row.get(\"not_for\") or \"\").strip()\n            alias = str(row.get(\"route_alias\") or \"\").strip()\n\n            if alias:\n                route_aliases[key] = alias\n\n            if not desc and not not_for:\n                criteria_map[key] = None\n            elif not_for:\n                criteria_map[key] = {\n                    \"what\": desc or key,\n                    \"not_for\": not_for,\n                }\n            else:\n                criteria_map[key] = desc\n\n        if len(criteria_map) < 2:\n            raise ValueError(f\"Kev Choice Question '{q_id}' requires at least 2 options in the table.\")\n        if len(criteria_map) > 255:\n            raise ValueError(f\"Kev Choice Question '{q_id}' exceeds the 255-option limit ({len(criteria_map)}).\")\n\n        current_entry = {\n            \"question_id\": q_id,\n            \"api_spec\": {\n                \"type\": \"choice\",\n                \"instructions\": instr,\n                \"criteria\": criteria_map,\n            },\n            \"policy\": {\n                \"min_confidence\": float(self.min_confidence if self.min_confidence is not None else 0.65),\n                \"low_confidence_label\": (self.low_confidence_label or \"HUMAN_REVIEW\").strip(),\n                \"route_aliases\": route_aliases,\n            },\n        }\n\n        bundle_list: list[dict[str, Any]] = []\n        if self.upstream_questions:\n            up_items = (\n                self.upstream_questions\n                if isinstance(self.upstream_questions, list)\n                else [self.upstream_questions]\n            )\n            for item in up_items:\n                d = item.data if hasattr(item, \"data\") and isinstance(item.data, dict) else item\n                if isinstance(d, dict):\n                    if \"kev_question_bundle\" in d and isinstance(d[\"kev_question_bundle\"], list):\n                        bundle_list.extend(d[\"kev_question_bundle\"])\n                    elif \"question_id\" in d and \"api_spec\" in d:\n                        bundle_list.append(d)\n\n        bundle_list.append(current_entry)\n        self.status = f\"Choice '{q_id}' ({len(criteria_map)} options)\"\n\n        return Data(\n            data={\n                \"question_id\": q_id,\n                \"api_spec\": current_entry[\"api_spec\"],\n                \"policy\": current_entry[\"policy\"],\n                \"kev_question_bundle\": bundle_list,\n            },\n            text_key=\"question_id\",\n        )",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "instructions": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "instructions",
+                "value": "Which team should handle this customer request?",
+                "display_name": "Choice Question / Instructions",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Natural-language question telling Kev how to pick among the options below.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "low_confidence_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "low_confidence_label",
+                "value": "HUMAN_REVIEW",
+                "display_name": "Low-Confidence Fallback Label",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when confidence is below Minimum Confidence Threshold.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "min_confidence": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "min_confidence",
+                "value": 0.65,
+                "display_name": "Minimum Confidence Threshold",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "If Kev's choice confidence is below this cutoff, the question routes to Low-Confidence Label.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              },
+              "question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "question_id",
+                "value": "department",
+                "display_name": "Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Unique identifier for this Choice question (e.g., 'department', 'intent', 'topic').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              }
+            },
+            "description": "Visual builder for a Choice question (1 to 255 mutually exclusive options). Configure option keys, descriptions, and exclusion rules via a GUI table.",
+            "icon": "ListFilter",
+            "base_classes": [
+              "JSON"
+            ],
+            "display_name": "JEV Choice Question (GUI)",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_spec_out",
+                "hidden": null,
+                "display_name": "Choice Question Spec",
+                "method": "build_choice_question",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": false,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "question_id",
+              "instructions",
+              "choice_options_table",
+              "min_confidence",
+              "low_confidence_label",
+              "upstream_questions"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevChoiceQuestionNode",
+              "module": "custom_components.kev_choice_question_gui",
+              "code_hash": "bb844519d656",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "choice-node-1",
+        "position": {
+          "x": 100,
+          "y": 100
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevNoulQuestionNode-mOmTF",
+          "type": "KevNoulQuestionNode",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "upstream_questions": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": true,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "upstream_questions",
+                "value": "",
+                "display_name": "Chain Previous Questions (Optional)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    DataInput,\n    FloatInput,\n    MultilineInput,\n    Output,\n    StrInput,\n)\nfrom lfx.schema.data import Data\n\n\nclass KevNoulQuestionNode(Component):\n    \"\"\"Visual GUI Builder for a Kev/Jev System 1 'noul' (Yes/No Probability) Question.\"\"\"\n\n    display_name: str = \"Kev Noul Question (Yes/No GUI)\"\n    description: str = (\n        \"Visual builder for a Noul (Yes/No) binary proposition. Returns calibrated P(yes) \"\n        \"in [0, 1] with dedicated True/False boundary boxes and 3-lane probability thresholds.\"\n    )\n    icon: str = \"CheckCircle2\"\n    name: str = \"KevNoulQuestionNode\"\n\n    inputs = [\n        StrInput(\n            name=\"question_id\",\n            display_name=\"Question ID\",\n            value=\"requests_refund\",\n            info=\"Unique identifier for this Noul question (e.g., 'requests_refund', 'is_urgent', 'has_pii').\",\n            required=True,\n        ),\n        MultilineInput(\n            name=\"instructions\",\n            display_name=\"Yes/No Proposition or Question\",\n            value=\"Does this message explicitly ask for a refund, charge reversal, or billing credit?\",\n            info=\"Phrase as a clear Yes/No question or affirmative statement where YES = true.\",\n            required=True,\n        ),\n        MultilineInput(\n            name=\"true_criteria\",\n            display_name=\"What Counts as YES (True Criteria - Optional)\",\n            value=\"The sender asks for money back, a refund, duplicate charge reversal, or account credit.\",\n            info=(\n                \"Describe what counts as 'true' (Yes). Leave both YES and NO boxes blank \"\n                \"if the statement alone is sufficient.\"\n            ),\n            required=False,\n        ),\n        MultilineInput(\n            name=\"false_criteria\",\n            display_name=\"What Counts as NO (False Criteria - Optional)\",\n            value=\"The sender reports a bug, asks an invoice question, or cancels future renewal without asking for money back.\",\n            info=\"Describe what counts as 'false' (No).\",\n            required=False,\n        ),\n        FloatInput(\n            name=\"yes_threshold\",\n            display_name=\"YES Probability Cutoff (>=)\",\n            value=0.70,\n            info=\"If P(yes) >= this value, routes to the YES Route Label.\",\n            advanced=False,\n        ),\n        FloatInput(\n            name=\"no_threshold\",\n            display_name=\"NO Probability Cutoff (<=)\",\n            value=0.30,\n            info=\"If P(yes) <= this value, routes to the NO Route Label. Values in between route to Uncertain.\",\n            advanced=False,\n        ),\n        StrInput(\n            name=\"yes_route_label\",\n            display_name=\"YES Route Label\",\n            value=\"YES\",\n            info=\"Route label emitted when P(yes) >= YES Probability Cutoff.\",\n            advanced=True,\n        ),\n        StrInput(\n            name=\"no_route_label\",\n            display_name=\"NO Route Label\",\n            value=\"NO\",\n            info=\"Route label emitted when P(yes) <= NO Probability Cutoff.\",\n            advanced=True,\n        ),\n        StrInput(\n            name=\"uncertain_route_label\",\n            display_name=\"Uncertain / Middle-Band Route Label\",\n            value=\"HUMAN_REVIEW\",\n            info=\"Route label emitted when P(yes) is between NO Cutoff and YES Cutoff.\",\n            advanced=True,\n        ),\n        DataInput(\n            name=\"upstream_questions\",\n            display_name=\"Chain Previous Questions (Optional)\",\n            info=\"Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.\",\n            is_list=True,\n            required=False,\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Noul Question Spec\",\n            name=\"question_spec_out\",\n            method=\"build_noul_question\",\n        ),\n    ]\n\n    def build_noul_question(self) -> Data:\n        q_id = (self.question_id or \"noul_question\").strip() or \"noul_question\"\n        instr = (self.instructions or \"\").strip()\n        true_desc = (self.true_criteria or \"\").strip()\n        false_desc = (self.false_criteria or \"\").strip()\n\n        if not instr and not (true_desc or false_desc):\n            raise ValueError(\n                f\"Kev Noul Question '{q_id}' requires either Instructions or True/False criteria.\"\n            )\n\n        api_spec: dict[str, Any] = {\n            \"type\": \"noul\",\n            \"instructions\": instr,\n        }\n        if true_desc or false_desc:\n            api_spec[\"criteria\"] = {\n                \"true\": true_desc,\n                \"false\": false_desc,\n            }\n\n        yes_t = float(self.yes_threshold if self.yes_threshold is not None else 0.70)\n        no_t = float(self.no_threshold if self.no_threshold is not None else 0.30)\n        if no_t > yes_t:\n            raise ValueError(\n                f\"In Kev Noul Question '{q_id}', NO Cutoff ({no_t}) cannot be greater than YES Cutoff ({yes_t}).\"\n            )\n\n        current_entry = {\n            \"question_id\": q_id,\n            \"api_spec\": api_spec,\n            \"policy\": {\n                \"yes_threshold\": yes_t,\n                \"no_threshold\": no_t,\n                \"yes_route_label\": (self.yes_route_label or \"YES\").strip(),\n                \"no_route_label\": (self.no_route_label or \"NO\").strip(),\n                \"uncertain_route_label\": (self.uncertain_route_label or \"HUMAN_REVIEW\").strip(),\n            },\n        }\n\n        bundle_list: list[dict[str, Any]] = []\n        if self.upstream_questions:\n            up_items = (\n                self.upstream_questions\n                if isinstance(self.upstream_questions, list)\n                else [self.upstream_questions]\n            )\n            for item in up_items:\n                d = item.data if hasattr(item, \"data\") and isinstance(item.data, dict) else item\n                if isinstance(d, dict):\n                    if \"kev_question_bundle\" in d and isinstance(d[\"kev_question_bundle\"], list):\n                        bundle_list.extend(d[\"kev_question_bundle\"])\n                    elif \"question_id\" in d and \"api_spec\" in d:\n                        bundle_list.append(d)\n\n        bundle_list.append(current_entry)\n        self.status = f\"Noul '{q_id}' (YES>={yes_t}, NO<={no_t})\"\n\n        return Data(\n            data={\n                \"question_id\": q_id,\n                \"api_spec\": current_entry[\"api_spec\"],\n                \"policy\": current_entry[\"policy\"],\n                \"kev_question_bundle\": bundle_list,\n            },\n            text_key=\"question_id\",\n        )",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "false_criteria": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "false_criteria",
+                "value": "The sender reports a bug, asks an invoice question, or cancels future renewal without asking for money back.",
+                "display_name": "What Counts as NO (False Criteria - Optional)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Describe what counts as 'false' (No).",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "instructions": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "instructions",
+                "value": "Does this message explicitly ask for a refund, charge reversal, or billing credit?",
+                "display_name": "Yes/No Proposition or Question",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Phrase as a clear Yes/No question or affirmative statement where YES = true.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "no_route_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "no_route_label",
+                "value": "NO",
+                "display_name": "NO Route Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when P(yes) <= NO Probability Cutoff.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "no_threshold": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "no_threshold",
+                "value": 0.3,
+                "display_name": "NO Probability Cutoff (<=)",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "If P(yes) <= this value, routes to the NO Route Label. Values in between route to Uncertain.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              },
+              "question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "question_id",
+                "value": "requests_refund",
+                "display_name": "Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Unique identifier for this Noul question (e.g., 'requests_refund', 'is_urgent', 'has_pii').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "true_criteria": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "true_criteria",
+                "value": "The sender asks for money back, a refund, duplicate charge reversal, or account credit.",
+                "display_name": "What Counts as YES (True Criteria - Optional)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Describe what counts as 'true' (Yes). Leave both YES and NO boxes blank if the statement alone is sufficient.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "uncertain_route_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "uncertain_route_label",
+                "value": "HUMAN_REVIEW",
+                "display_name": "Uncertain / Middle-Band Route Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when P(yes) is between NO Cutoff and YES Cutoff.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "yes_route_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "yes_route_label",
+                "value": "YES",
+                "display_name": "YES Route Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when P(yes) >= YES Probability Cutoff.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "yes_threshold": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "yes_threshold",
+                "value": 0.7,
+                "display_name": "YES Probability Cutoff (>=)",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "If P(yes) >= this value, routes to the YES Route Label.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              }
+            },
+            "description": "Visual builder for a Noul (Yes/No) binary proposition. Returns calibrated P(yes) in [0, 1] with dedicated True/False boundary boxes and 3-lane probability thresholds.",
+            "icon": "CheckCircle2",
+            "base_classes": [
+              "JSON"
+            ],
+            "display_name": "JEV Noul Question (Yes/No GUI)",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_spec_out",
+                "hidden": null,
+                "display_name": "Noul Question Spec",
+                "method": "build_noul_question",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": false,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "question_id",
+              "instructions",
+              "true_criteria",
+              "false_criteria",
+              "yes_threshold",
+              "no_threshold",
+              "yes_route_label",
+              "no_route_label",
+              "uncertain_route_label",
+              "upstream_questions"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevNoulQuestionNode",
+              "module": "custom_components.kev_noul_question_yesno_gui",
+              "code_hash": "89eab89a06cc",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "noul-node-1",
+        "position": {
+          "x": 100,
+          "y": 450
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevScoreQuestionNode-UWM6q",
+          "type": "KevScoreQuestionNode",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "upstream_questions": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": true,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "upstream_questions",
+                "value": "",
+                "display_name": "Chain Previous Questions (Optional)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    BoolInput,\n    DataInput,\n    DropdownInput,\n    FloatInput,\n    MultilineInput,\n    Output,\n    StrInput,\n    TableInput,\n)\nfrom lfx.schema.data import Data\n\n\nclass KevScoreQuestionNode(Component):\n    \"\"\"Visual GUI Builder for a Manual-Valued Kev/Jev Score Question where item values sum to 1.0.\n\n    Replaces integer rubric levels (0, 1, 2...) with user-defined manual values\n    (e.g., shipping = 0.25, packaging = 0.25, product_quality = 0.30, billing = 0.20)\n    and validates that the sum of all manual values equals 1.0.\n    \"\"\"\n\n    display_name: str = \"Kev Score Question (Manual Values GUI)\"\n    description: str = (\n        \"Assign manual numeric weights (e.g., shipping: 0.25) to each scored item or level. \"\n        \"Validates that all manual values accumulate to 1.0.\"\n    )\n    icon: str = \"Sliders\"\n    name: str = \"KevScoreQuestionNode\"\n\n    inputs = [\n        StrInput(\n            name=\"question_id\",\n            display_name=\"Question ID\",\n            value=\"weighted_score\",\n            info=\"Unique identifier for this Score question (e.g., 'order_score', 'shipping_eval').\",\n            required=True,\n        ),\n        MultilineInput(\n            name=\"instructions\",\n            display_name=\"Scoring Question / Instructions\",\n            value=\"Evaluate the state against each weighted item below.\",\n            info=(\n                \"Instructions telling Kev what to evaluate. Use backticks (e.g., `message`) \"\n                \"to reference specific fields when State is a JSON object.\"\n            ),\n            required=True,\n        ),\n        TableInput(\n            name=\"manual_levels_table\",\n            display_name=\"Manual Value Items (Sum Must Equal 1.0)\",\n            info=(\n                \"Define 2 to 10 items with manual numeric values that accumulate to 1.0 \"\n                \"(for example: 0.25 + 0.25 + 0.30 + 0.20 = 1.00).\"\n            ),\n            table_schema=[\n                {\n                    \"name\": \"item_name\",\n                    \"display_name\": \"Item / Level Name\",\n                    \"type\": \"str\",\n                    \"description\": \"Identifier or route tag for this item (e.g., shipping, packaging)\",\n                },\n                {\n                    \"name\": \"manual_value\",\n                    \"display_name\": \"Manual Value (0.0 - 1.0)\",\n                    \"type\": \"float\",\n                    \"description\": \"Manual weight assigned to this item. All rows must sum to 1.0.\",\n                },\n                {\n                    \"name\": \"description\",\n                    \"display_name\": \"Criteria Description (Sent to Kev)\",\n                    \"type\": \"str\",\n                    \"description\": \"What counts for this item/level when Kev evaluates the state\",\n                },\n            ],\n            value=[\n                {\n                    \"item_name\": \"shipping\",\n                    \"manual_value\": 0.25,\n                    \"description\": \"Shipping speed, carrier handling, tracking updates, and on-time delivery.\",\n                },\n                {\n                    \"item_name\": \"packaging\",\n                    \"manual_value\": 0.25,\n                    \"description\": \"Box integrity, protective materials, and item condition upon arrival.\",\n                },\n                {\n                    \"item_name\": \"product_quality\",\n                    \"manual_value\": 0.30,\n                    \"description\": \"Product build quality, accuracy to specifications, and defect-free operation.\",\n                },\n                {\n                    \"item_name\": \"billing_support\",\n                    \"manual_value\": 0.20,\n                    \"description\": \"Pricing accuracy, invoice clarity, and responsiveness of customer support.\",\n                },\n            ],\n            required=True,\n        ),\n        DropdownInput(\n            name=\"score_calculation_mode\",\n            display_name=\"Manual Score Calculation Mode\",\n            options=[\n                \"weighted_sum_probabilities\",\n                \"independent_criteria_accumulation\",\n                \"winning_item_value\",\n                \"cumulative_up_to_winner\",\n            ],\n            value=\"weighted_sum_probabilities\",\n            info=(\n                \"'weighted_sum_probabilities': single Kev score call returning Sum(manual_value_i * P_i); \"\n                \"'independent_criteria_accumulation': evaluates each item independently (Yes/No P_i) and \"\n                \"accumulates Sum(manual_value_i * P_i) up to 1.0; \"\n                \"'winning_item_value': returns the exact manual_value of the highest-probability item; \"\n                \"'cumulative_up_to_winner': accumulates manual values from row 1 up to the winning row.\"\n            ),\n            real_time_refresh=True,\n        ),\n        BoolInput(\n            name=\"strict_sum_to_one\",\n            display_name=\"Strictly Enforce Sum == 1.0\",\n            value=True,\n            info=(\n                \"When enabled (default), raises an error if the Manual Value column does not \"\n                \"sum to 1.0. When disabled, automatically normalizes values so they sum to 1.0.\"\n            ),\n            advanced=False,\n        ),\n        DropdownInput(\n            name=\"routing_mode\",\n            display_name=\"Route Output Mode\",\n            options=[\n                \"winning_item_name\",\n                \"threshold_pass_fail\",\n                \"manual_score_value\",\n            ],\n            value=\"winning_item_name\",\n            info=(\n                \"'winning_item_name' emits the winning item's name (e.g., 'shipping'); \"\n                \"'threshold_pass_fail' emits HIGH_SCORE / LOW_SCORE based on Score Cutoff; \"\n                \"'manual_score_value' emits the computed numeric score (e.g., '0.685').\"\n            ),\n            real_time_refresh=True,\n        ),\n        FloatInput(\n            name=\"score_cutoff\",\n            display_name=\"Score Cutoff (0.0 to 1.0)\",\n            value=0.50,\n            info=\"Cutoff between 0.0 and 1.0 used when Route Output Mode is 'threshold_pass_fail'.\",\n            show=False,\n        ),\n        StrInput(\n            name=\"high_score_label\",\n            display_name=\"High Score Route Label\",\n            value=\"HIGH_SCORE\",\n            info=\"Route label emitted when computed manual score >= Score Cutoff.\",\n            show=False,\n            advanced=True,\n        ),\n        StrInput(\n            name=\"low_score_label\",\n            display_name=\"Low Score Route Label\",\n            value=\"LOW_SCORE\",\n            info=\"Route label emitted when computed manual score < Score Cutoff.\",\n            show=False,\n            advanced=True,\n        ),\n        FloatInput(\n            name=\"min_confidence\",\n            display_name=\"Minimum Confidence Threshold\",\n            value=0.55,\n            info=\"If confidence is below this cutoff, routes to the Low-Confidence Fallback Label.\",\n            advanced=False,\n        ),\n        StrInput(\n            name=\"low_confidence_label\",\n            display_name=\"Low-Confidence Fallback Label\",\n            value=\"HUMAN_REVIEW\",\n            info=\"Route label emitted when confidence is below Minimum Confidence Threshold.\",\n            advanced=True,\n        ),\n        DataInput(\n            name=\"upstream_questions\",\n            display_name=\"Chain Previous Questions (Optional)\",\n            info=\"Optionally chain another Kev Question node here, or wire all Question nodes directly to the Core Engine.\",\n            is_list=True,\n            required=False,\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Score Question Spec\",\n            name=\"question_spec_out\",\n            method=\"build_score_question\",\n        ),\n    ]\n\n    def update_build_config(\n        self,\n        build_config: dict[str, Any],\n        field_value: Any,\n        field_name: str | None = None,\n    ) -> dict[str, Any]:\n        if field_name == \"routing_mode\":\n            is_thresh = field_value == \"threshold_pass_fail\"\n            for f_name in (\"score_cutoff\", \"high_score_label\", \"low_score_label\"):\n                if f_name in build_config:\n                    build_config[f_name][\"show\"] = is_thresh\n        return build_config\n\n    def _parse_and_validate_rows(self, q_id: str) -> tuple[list[str], list[float], list[str]]:\n        \"\"\"Parses the GUI table and validates that all manual_value entries accumulate to 1.0.\"\"\"\n        rows = self.manual_levels_table or []\n        item_names: list[str] = []\n        manual_values: list[float] = []\n        descriptions: list[str] = []\n\n        for idx, row in enumerate(rows):\n            if not isinstance(row, dict):\n                continue\n            name = str(row.get(\"item_name\") or \"\").strip() or f\"item_{idx}\"\n            desc = str(row.get(\"description\") or \"\").strip() or name\n            raw_val = row.get(\"manual_value\")\n\n            if raw_val is None or str(raw_val).strip() == \"\":\n                raise ValueError(\n                    f\"Row {idx + 1} ('{name}') in Kev Score Question '{q_id}' is missing a 'manual_value'.\"\n                )\n            try:\n                val = float(raw_val)\n            except (TypeError, ValueError) as exc:\n                raise ValueError(\n                    f\"Row {idx + 1} ('{name}') in '{q_id}' has an invalid float for 'manual_value': {raw_val}\"\n                ) from exc\n\n            if val < 0.0:\n                raise ValueError(\n                    f\"Row {idx + 1} ('{name}') in '{q_id}' has a negative manual_value ({val}). \"\n                    \"All manual values must be >= 0.0.\"\n                )\n\n            item_names.append(name)\n            manual_values.append(val)\n            descriptions.append(desc)\n\n        if len(item_names) < 2:\n            raise ValueError(\n                f\"Kev Score Question '{q_id}' requires at least 2 items in the Manual Value table.\"\n            )\n        if len(item_names) > 10 and self.score_calculation_mode != \"independent_criteria_accumulation\":\n            raise ValueError(\n                f\"Kev's native 'score' primitive supports 2 to 10 items (received {len(item_names)}). \"\n                \"Switch Manual Score Calculation Mode to 'independent_criteria_accumulation' for >10 items.\"\n            )\n\n        total_sum = sum(manual_values)\n        strict = bool(getattr(self, \"strict_sum_to_one\", True))\n\n        if abs(total_sum - 1.0) > 1e-4:\n            if strict:\n                breakdown = \", \".join(f\"{n}={v}\" for n, v in zip(item_names, manual_values))\n                diff = 1.0 - total_sum\n                diff_str = f\"+{diff:.4f}\" if diff > 0 else f\"{diff:.4f}\"\n                raise ValueError(\n                    f\"Manual values in '{q_id}' must accumulate to 1.0, but current sum is \"\n                    f\"{total_sum:.4f} ({breakdown}). Adjustment needed to reach 1.0: {diff_str}.\"\n                )\n            if total_sum <= 0:\n                raise ValueError(f\"Sum of manual values in '{q_id}' must be greater than 0.\")\n            manual_values = [round(v / total_sum, 6) for v in manual_values]\n\n        return item_names, manual_values, descriptions\n\n    def build_score_question(self) -> Data:\n        q_id = (self.question_id or \"weighted_score\").strip() or \"weighted_score\"\n        instr = (self.instructions or \"\").strip()\n        if not instr:\n            raise ValueError(f\"Instructions cannot be empty in Kev Score Question '{q_id}'.\")\n\n        item_names, manual_values, descriptions = self._parse_and_validate_rows(q_id)\n        calc_mode = self.score_calculation_mode or \"weighted_sum_probabilities\"\n\n        current_entry = {\n            \"question_id\": q_id,\n            \"api_spec\": {\n                \"type\": \"score\",\n                \"instructions\": instr,\n                \"criteria\": descriptions,\n            },\n            \"policy\": {\n                \"is_manual_weighted_score\": True,\n                \"score_calculation_mode\": calc_mode,\n                \"level_tags\": item_names,\n                \"manual_values\": manual_values,\n                \"descriptions\": descriptions,\n                \"routing_mode\": self.routing_mode or \"winning_item_name\",\n                \"score_cutoff\": float(self.score_cutoff if self.score_cutoff is not None else 0.50),\n                \"high_score_label\": (self.high_score_label or \"HIGH_SCORE\").strip(),\n                \"low_score_label\": (self.low_score_label or \"LOW_SCORE\").strip(),\n                \"min_confidence\": float(self.min_confidence if self.min_confidence is not None else 0.55),\n                \"low_confidence_label\": (self.low_confidence_label or \"HUMAN_REVIEW\").strip(),\n            },\n        }\n\n        bundle_list: list[dict[str, Any]] = []\n        if self.upstream_questions:\n            up_items = (\n                self.upstream_questions\n                if isinstance(self.upstream_questions, list)\n                else [self.upstream_questions]\n            )\n            for item in up_items:\n                d = item.data if hasattr(item, \"data\") and isinstance(item.data, dict) else item\n                if isinstance(d, dict):\n                    if \"kev_question_bundle\" in d and isinstance(d[\"kev_question_bundle\"], list):\n                        bundle_list.extend(d[\"kev_question_bundle\"])\n                    elif \"question_id\" in d and \"api_spec\" in d:\n                        bundle_list.append(d)\n\n        bundle_list.append(current_entry)\n        weights_summary = \", \".join(f\"{n}={v:.2f}\" for n, v in zip(item_names, manual_values))\n        self.status = f\"Manual Score '{q_id}' (Sum=1.00: {weights_summary})\"\n\n        return Data(\n            data={\n                \"question_id\": q_id,\n                \"api_spec\": current_entry[\"api_spec\"],\n                \"policy\": current_entry[\"policy\"],\n                \"kev_question_bundle\": bundle_list,\n            },\n            text_key=\"question_id\",\n        )",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "high_score_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": false,
+                "name": "high_score_label",
+                "value": "HIGH_SCORE",
+                "display_name": "High Score Route Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when computed manual score >= Score Cutoff.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "instructions": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "instructions",
+                "value": "Evaluate the state against each weighted item below.",
+                "display_name": "Scoring Question / Instructions",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Instructions telling Kev what to evaluate. Use backticks (e.g., `message`) to reference specific fields when State is a JSON object.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "low_confidence_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "low_confidence_label",
+                "value": "HUMAN_REVIEW",
+                "display_name": "Low-Confidence Fallback Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when confidence is below Minimum Confidence Threshold.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "low_score_label": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": false,
+                "name": "low_score_label",
+                "value": "LOW_SCORE",
+                "display_name": "Low Score Route Label",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Route label emitted when computed manual score < Score Cutoff.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "manual_levels_table": {
+                "tool_mode": false,
+                "is_list": true,
+                "list_add_label": "Add More",
+                "table_schema": [
+                  {
+                    "name": "item_name",
+                    "display_name": "Item / Level Name",
+                    "type": "str",
+                    "description": "Identifier or route tag for this item (e.g., shipping, packaging)",
+                    "formatter": "text"
+                  },
+                  {
+                    "name": "manual_value",
+                    "display_name": "Manual Value (0.0 - 1.0)",
+                    "type": "float",
+                    "description": "Manual weight assigned to this item. All rows must sum to 1.0.",
+                    "formatter": "text"
+                  },
+                  {
+                    "name": "description",
+                    "display_name": "Criteria Description (Sent to Kev)",
+                    "type": "str",
+                    "description": "What counts for this item/level when Kev evaluates the state",
+                    "formatter": "text"
+                  }
+                ],
+                "trigger_text": "Open table",
+                "trigger_icon": "Table",
+                "table_icon": "Table",
+                "trace_as_metadata": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "manual_levels_table",
+                "value": [
+                  {
+                    "item_name": "shipping",
+                    "manual_value": 0.25,
+                    "description": "Shipping speed, carrier handling, tracking updates, and on-time delivery."
+                  },
+                  {
+                    "item_name": "packaging",
+                    "manual_value": 0.25,
+                    "description": "Box integrity, protective materials, and item condition upon arrival."
+                  },
+                  {
+                    "item_name": "product_quality",
+                    "manual_value": 0.3,
+                    "description": "Product build quality, accuracy to specifications, and defect-free operation."
+                  },
+                  {
+                    "item_name": "billing_support",
+                    "manual_value": 0.2,
+                    "description": "Pricing accuracy, invoice clarity, and responsiveness of customer support."
+                  }
+                ],
+                "display_name": "Manual Value Items (Sum Must Equal 1.0)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "DataFrame",
+                  "Table"
+                ],
+                "dynamic": false,
+                "info": "Define 2 to 10 items with manual numeric values that accumulate to 1.0 (for example: 0.25 + 0.25 + 0.30 + 0.20 = 1.00).",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "table",
+                "_input_type": "TableInput"
+              },
+              "min_confidence": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "min_confidence",
+                "value": 0.55,
+                "display_name": "Minimum Confidence Threshold",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "If confidence is below this cutoff, routes to the Low-Confidence Fallback Label.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              },
+              "question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "question_id",
+                "value": "weighted_score",
+                "display_name": "Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Unique identifier for this Score question (e.g., 'order_score', 'shipping_eval').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "routing_mode": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "winning_item_name",
+                  "threshold_pass_fail",
+                  "manual_score_value"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "routing_mode",
+                "value": "winning_item_name",
+                "display_name": "Route Output Mode",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "'winning_item_name' emits the winning item's name (e.g., 'shipping'); 'threshold_pass_fail' emits HIGH_SCORE / LOW_SCORE based on Score Cutoff; 'manual_score_value' emits the computed numeric score (e.g., '0.685').",
+                "real_time_refresh": true,
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "score_calculation_mode": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "weighted_sum_probabilities",
+                  "independent_criteria_accumulation",
+                  "winning_item_value",
+                  "cumulative_up_to_winner"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "score_calculation_mode",
+                "value": "weighted_sum_probabilities",
+                "display_name": "Manual Score Calculation Mode",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "'weighted_sum_probabilities': single Kev score call returning Sum(manual_value_i * P_i); 'independent_criteria_accumulation': evaluates each item independently (Yes/No P_i) and accumulates Sum(manual_value_i * P_i) up to 1.0; 'winning_item_value': returns the exact manual_value of the highest-probability item; 'cumulative_up_to_winner': accumulates manual values from row 1 up to the winning row.",
+                "real_time_refresh": true,
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "score_cutoff": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": false,
+                "name": "score_cutoff",
+                "value": 0.5,
+                "display_name": "Score Cutoff (0.0 to 1.0)",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Cutoff between 0.0 and 1.0 used when Route Output Mode is 'threshold_pass_fail'.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              },
+              "strict_sum_to_one": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "strict_sum_to_one",
+                "value": true,
+                "display_name": "Strictly Enforce Sum == 1.0",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "When enabled (default), raises an error if the Manual Value column does not sum to 1.0. When disabled, automatically normalizes values so they sum to 1.0.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "bool",
+                "_input_type": "BoolInput"
+              }
+            },
+            "description": "Assign manual numeric weights (e.g., shipping: 0.25) to each scored item or level. Validates that all manual values accumulate to 1.0.",
+            "icon": "Sliders",
+            "base_classes": [
+              "JSON"
+            ],
+            "display_name": "JEV Score Question (Manual Values GUI)",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_spec_out",
+                "hidden": null,
+                "display_name": "Score Question Spec",
+                "method": "build_score_question",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": false,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "question_id",
+              "instructions",
+              "manual_levels_table",
+              "score_calculation_mode",
+              "strict_sum_to_one",
+              "routing_mode",
+              "score_cutoff",
+              "high_score_label",
+              "low_score_label",
+              "min_confidence",
+              "low_confidence_label",
+              "upstream_questions"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevScoreQuestionNode",
+              "module": "custom_components.kev_score_question_manual_values_gui",
+              "code_hash": "6da7e3b709e9",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "score-node-1",
+        "position": {
+          "x": 100,
+          "y": 800
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevSystemOneCoreEngine-1JjUX",
+          "type": "KevSystemOneCoreEngine",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "question_specs": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": true,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "question_specs",
+                "value": "",
+                "display_name": "Question Specs (Connect GUI Nodes)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Connect one or more 'Kev Choice Question', 'Kev Score Question (Manual Values GUI)', or 'Kev Noul Question' nodes here.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "state_data": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "state_data",
+                "value": "",
+                "display_name": "State Data / Structured Context",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Optional Data object or list[Data] merged with State Text.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "api_key": {
+                "load_from_db": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "api_key",
+                "value": "",
+                "display_name": "TypeSafe / Jev API Key",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [],
+                "dynamic": false,
+                "info": "Bearer token. Defaults to 'local-kev' for self-hosted instances (no auth needed). Required for TypeSafe Cloud.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "password": true,
+                "type": "str",
+                "_input_type": "SecretStrInput"
+              },
+              "base_url": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "base_url",
+                "value": "http://kev-server:8009",
+                "display_name": "API Base URL",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Base URL for the System 1 API endpoint. Default is local Kev at 'http://kev-server:8009'. Calls POST {base_url}/v1/systemone.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "import json\nimport math\nimport os\nimport time\nfrom typing import Any\n\nimport httpx\nimport pandas as pd\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    BoolInput,\n    DataInput,\n    DropdownInput,\n    FloatInput,\n    IntInput,\n    MessageTextInput,\n    NestedDictInput,\n    Output,\n    SecretStrInput,\n    StrInput,\n)\nfrom lfx.schema.data import Data\nfrom lfx.schema.dataframe import DataFrame\nfrom lfx.schema.message import Message\n\n\nclass KevSystemOneCoreEngine(Component):\n    \"\"\"Central parallel execution engine for Local Kev and TypeSafe Jev System 1 models.\n\n    Supports manual-value Score questions (where item weights accumulate to 1.0),\n    Choice questions, and Noul (Yes/No) questions in a single parallel /v1/systemone call.\n    \"\"\"\n\n    display_name: str = \"Kev System 1 Core Engine\"\n    description: str = (\n        \"Evaluates all connected Choice, Manual-Value Score, and Noul GUI Question nodes \"\n        \"in parallel in a single /v1/systemone pass. Configured with Local Kev defaults.\"\n    )\n    documentation: str = \"https://docs.typesafe.ai/concepts/system-one\"\n    icon: str = \"Cpu\"\n    name: str = \"KevSystemOneCoreEngine\"\n    priority: int = 1\n\n    inputs = [\n        # --- 1. Local Kev Default Endpoint, Model & Auth (Visible on Canvas) ---\n        StrInput(\n            name=\"base_url\",\n            display_name=\"API Base URL\",\n            value=\"http://kev-server:8009\",\n            info=(\n                \"Base URL for the System 1 API endpoint. Default is local Kev at \"\n                \"'http://kev-server:8009'. Calls POST {base_url}/v1/systemone.\"\n            ),\n            advanced=False,\n            required=False,\n        ),\n        DropdownInput(\n            name=\"model_name\",\n            display_name=\"Model Version / Alias\",\n            options=[\n                \"kev-latest\",\n                \"jev-latest\",\n                \"kev-4b\",\n                \"kev-9b\",\n                \"kev-27b\",\n                \"kev-0.8b\",\n                \"custom\",\n            ],\n            value=\"kev-latest\",\n            info=\"Target model identifier. Default is 'kev-latest' for the local Kev server.\",\n            real_time_refresh=True,\n        ),\n        StrInput(\n            name=\"custom_model_name\",\n            display_name=\"Custom Model ID\",\n            value=\"kev-latest\",\n            info=\"Specify a custom model tag when 'Model Version / Alias' is set to 'custom'.\",\n            show=False,\n            advanced=False,\n        ),\n        SecretStrInput(\n            name=\"api_key\",\n            display_name=\"TypeSafe / Jev API Key\",\n            value=\"local-kev\",\n            info=(\n                \"Bearer token. Defaults to 'local-kev' for self-hosted instances (no auth needed). \"\n                \"Required for TypeSafe Cloud.\"\n            ),\n            required=False,\n            advanced=False,\n        ),\n\n        # --- 2. Visual Question Nodes Input ---\n        DataInput(\n            name=\"question_specs\",\n            display_name=\"Question Specs (Connect GUI Nodes)\",\n            info=(\n                \"Connect one or more 'Kev Choice Question', 'Kev Score Question (Manual Values GUI)', \"\n                \"or 'Kev Noul Question' nodes here.\"\n            ),\n            is_list=True,\n            required=True,\n        ),\n\n        # --- 3. Shared State Inputs ---\n        MessageTextInput(\n            name=\"state_text\",\n            display_name=\"State Text / Message\",\n            info=\"Primary text or message to evaluate against all connected questions.\",\n            tool_mode=True,\n            required=False,\n        ),\n        DataInput(\n            name=\"state_data\",\n            display_name=\"State Data / Structured Context\",\n            info=\"Optional Data object or list[Data] merged with State Text.\",\n            required=False,\n        ),\n        DropdownInput(\n            name=\"state_format_mode\",\n            display_name=\"State Format Mode\",\n            options=[\n                \"auto\",\n                \"string\",\n                \"json_object\",\n                \"text_array\",\n            ],\n            value=\"auto\",\n            info=\"Controls how 'state' is formatted in the POST /v1/systemone request.\",\n            advanced=True,\n        ),\n        NestedDictInput(\n            name=\"extra_state_fields\",\n            display_name=\"Additional State Metadata (JSON)\",\n            info=\"Optional key-value facts merged into the state JSON object.\",\n            required=False,\n            advanced=True,\n        ),\n\n        # --- 4. Primary Route Port Behavior ---\n        DropdownInput(\n            name=\"overall_route_mode\",\n            display_name=\"Overall Route Output Mode\",\n            options=[\n                \"first_question_route\",\n                \"all_clear_or_review\",\n                \"combined_key_value_routes\",\n                \"json_routes_map\",\n            ],\n            value=\"first_question_route\",\n            info=\"Controls what 'Primary / Overall Route' emits for downstream Conditional Routers.\",\n            advanced=False,\n        ),\n\n        # --- 5. Resilience & Offline Testing ---\n        FloatInput(\n            name=\"timeout_seconds\",\n            display_name=\"Request Timeout (Seconds)\",\n            value=15.0,\n            info=\"HTTP timeout in seconds for the /v1/systemone call.\",\n            advanced=True,\n        ),\n        IntInput(\n            name=\"max_retries\",\n            display_name=\"Max Retries\",\n            value=2,\n            info=\"Automatic retries on HTTP 429/502/503/504/529 or transient network errors.\",\n            advanced=True,\n        ),\n        BoolInput(\n            name=\"enable_long_context\",\n            display_name=\"Enable Long Context Header\",\n            value=False,\n            info=\"Sends 'TypeSafe-Danger-Zone-Long-Context: true' header.\",\n            advanced=True,\n        ),\n        BoolInput(\n            name=\"mock_mode_if_unreachable\",\n            display_name=\"Fallback to Mock Simulator if Server Unreachable\",\n            value=False,\n            info=\"If enabled, simulates calibrated responses locally when the Kev server is offline.\",\n            advanced=True,\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Primary / Overall Route\",\n            name=\"overall_route\",\n            method=\"build_overall_route\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"All Decisions Data\",\n            name=\"all_decisions_data\",\n            method=\"build_all_decisions_data\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"Decisions Table\",\n            name=\"decisions_table\",\n            method=\"build_decisions_table\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"Agent Summary\",\n            name=\"agent_summary\",\n            method=\"build_agent_summary\",\n            group_outputs=True,\n        ),\n    ]\n\n    def update_build_config(\n        self,\n        build_config: dict[str, Any],\n        field_value: Any,\n        field_name: str | None = None,\n    ) -> dict[str, Any]:\n        if field_name == \"model_name\" and \"custom_model_name\" in build_config:\n            build_config[\"custom_model_name\"][\"show\"] = field_value == \"custom\"\n        return build_config\n\n    def _resolve_api_key(self) -> str:\n        \"\"\"Resolves the API key with automatic fallback for local Kev instances.\"\"\"\n        key = (self.api_key or \"\").strip()\n        if key:\n            return key\n\n        for env_name in (\"KEV_API_KEY\", \"TYPESAFE_API_KEY\", \"JEV_API_KEY\"):\n            env_val = os.getenv(env_name, \"\").strip()\n            if env_val:\n                return env_val\n\n        base = (self.base_url or \"\").strip().lower()\n        if not base or any(h in base for h in (\"kev-server\", \"localhost\", \"127.0.0.1\", \"0.0.0.0\")):\n            return \"local-kev\"\n\n        return \"\"\n\n    def _resolve_model_name(self) -> str:\n        \"\"\"Returns the target model name, defaulting to kev-latest.\"\"\"\n        if self.model_name == \"custom\":\n            custom = (self.custom_model_name or \"\").strip()\n            if not custom:\n                raise ValueError(\"Custom Model ID cannot be empty when set to 'custom'.\")\n            return custom\n        return self.model_name or \"kev-latest\"\n\n    def _build_state_payload(self) -> Any:\n        \"\"\"Constructs the shared 'state' payload as a string, JSON object, or string array.\"\"\"\n        mode = getattr(self, \"state_format_mode\", \"auto\") or \"auto\"\n        raw_text = (self.state_text or \"\").strip()\n        raw_data = self.state_data\n        extra_fields = self.extra_state_fields if isinstance(self.extra_state_fields, dict) else {}\n\n        extracted_data: Any = None\n        if raw_data is not None:\n            if isinstance(raw_data, list):\n                extracted_data = [\n                    item.data if hasattr(item, \"data\") else (item.text if hasattr(item, \"text\") else item)\n                    for item in raw_data\n                ]\n            elif hasattr(raw_data, \"data\") and isinstance(raw_data.data, dict):\n                extracted_data = dict(raw_data.data)\n            elif hasattr(raw_data, \"text\"):\n                extracted_data = str(raw_data.text)\n            elif isinstance(raw_data, dict):\n                extracted_data = dict(raw_data)\n            else:\n                extracted_data = str(raw_data)\n\n        parsed_text_json: Any = None\n        if raw_text and raw_text.startswith((\"{\", \"[\")):\n            try:\n                parsed_text_json = json.loads(raw_text)\n            except json.JSONDecodeError:\n                parsed_text_json = None\n\n        if mode == \"string\":\n            parts: list[str] = []\n            if raw_text:\n                parts.append(raw_text)\n            if extracted_data is not None:\n                parts.append(\n                    json.dumps(extracted_data, ensure_ascii=False)\n                    if isinstance(extracted_data, (dict, list))\n                    else str(extracted_data)\n                )\n            if extra_fields:\n                parts.append(json.dumps(extra_fields, ensure_ascii=False))\n            state_str = \"\\n\\n\".join(parts).strip()\n            if not state_str:\n                raise ValueError(\"State cannot be empty. Connect State Text or State Data.\")\n            return state_str\n\n        if mode == \"text_array\":\n            arr: list[str] = []\n            if raw_text:\n                if isinstance(parsed_text_json, list):\n                    arr.extend(str(x) for x in parsed_text_json)\n                else:\n                    arr.append(raw_text)\n            if isinstance(extracted_data, list):\n                for item in extracted_data:\n                    arr.append(\n                        json.dumps(item, ensure_ascii=False) if isinstance(item, dict) else str(item)\n                    )\n            elif extracted_data is not None:\n                arr.append(\n                    json.dumps(extracted_data, ensure_ascii=False)\n                    if isinstance(extracted_data, dict)\n                    else str(extracted_data)\n                )\n            if extra_fields:\n                arr.append(json.dumps(extra_fields, ensure_ascii=False))\n            if not arr:\n                raise ValueError(\"State text array cannot be empty.\")\n            return arr\n\n        if mode == \"json_object\":\n            obj: dict[str, Any] = {}\n            if isinstance(extracted_data, dict):\n                obj.update(extracted_data)\n            elif extracted_data is not None:\n                obj[\"context\"] = extracted_data\n            if isinstance(parsed_text_json, dict):\n                obj.update(parsed_text_json)\n            elif raw_text:\n                obj[\"message\"] = raw_text\n            if extra_fields:\n                obj.update(extra_fields)\n            if not obj:\n                raise ValueError(\"State JSON object cannot be empty.\")\n            return obj\n\n        if extra_fields or isinstance(extracted_data, dict) or isinstance(parsed_text_json, dict):\n            auto_obj: dict[str, Any] = {}\n            if isinstance(extracted_data, dict):\n                auto_obj.update(extracted_data)\n            elif extracted_data is not None:\n                auto_obj[\"data\"] = extracted_data\n            if isinstance(parsed_text_json, dict):\n                auto_obj.update(parsed_text_json)\n            elif raw_text:\n                auto_obj[\"message\"] = raw_text\n            if extra_fields:\n                auto_obj.update(extra_fields)\n            return auto_obj\n\n        if isinstance(extracted_data, list):\n            auto_list: list[str] = []\n            if raw_text:\n                auto_list.append(raw_text)\n            for item in extracted_data:\n                if isinstance(item, dict) and \"text\" in item and len(item) == 1:\n                    auto_list.append(str(item[\"text\"]))\n                elif isinstance(item, (dict, list)):\n                    auto_list.append(json.dumps(item, ensure_ascii=False))\n                else:\n                    auto_list.append(str(item))\n            return auto_list\n\n        if isinstance(parsed_text_json, list):\n            return [str(x) for x in parsed_text_json]\n\n        combined_str = raw_text or (str(extracted_data) if extracted_data is not None else \"\")\n        if not combined_str:\n            raise ValueError(\"State is empty. Connect a Message or Data input to evaluate.\")\n        return combined_str\n\n    def _collect_question_entries(self) -> list[dict[str, Any]]:\n        \"\"\"Collects all connected GUI Question nodes.\"\"\"\n        raw_inputs = self.question_specs\n        if raw_inputs is None:\n            raise ValueError(\n                \"No Question nodes connected! Connect at least one Kev Choice, Kev Score, \"\n                \"or Kev Noul Question node to 'Question Specs'.\"\n            )\n\n        items = raw_inputs if isinstance(raw_inputs, list) else [raw_inputs]\n        collected: list[dict[str, Any]] = []\n        seen_ids: set[str] = set()\n\n        for item in items:\n            payload = item.data if hasattr(item, \"data\") and isinstance(item.data, dict) else item\n            if not isinstance(payload, dict):\n                continue\n\n            if \"kev_question_bundle\" in payload and isinstance(payload[\"kev_question_bundle\"], list):\n                for entry in payload[\"kev_question_bundle\"]:\n                    if isinstance(entry, dict) and \"question_id\" in entry and \"api_spec\" in entry:\n                        q_id = str(entry[\"question_id\"])\n                        if q_id in seen_ids:\n                            collected = [c for c in collected if c[\"question_id\"] != q_id]\n                        seen_ids.add(q_id)\n                        collected.append(entry)\n            elif \"question_id\" in payload and \"api_spec\" in payload:\n                q_id = str(payload[\"question_id\"])\n                if q_id in seen_ids:\n                    collected = [c for c in collected if c[\"question_id\"] != q_id]\n                seen_ids.add(q_id)\n                collected.append(payload)\n\n        if not collected:\n            raise ValueError(\n                \"Connected input on 'Question Specs' did not contain valid Kev Question specifications.\"\n            )\n        return collected\n\n    def _simulate_mock_response(\n        self,\n        model: str,\n        state: Any,\n        questions: dict[str, dict[str, Any]],\n    ) -> dict[str, Any]:\n        \"\"\"Generates schema-accurate mock responses for offline flow testing.\"\"\"\n        state_text_lower = json.dumps(state, ensure_ascii=False).lower()\n        answers: dict[str, Any] = {}\n\n        for q_id, q_spec in questions.items():\n            q_type = q_spec[\"type\"]\n            if q_type == \"choice\":\n                options = list(q_spec[\"criteria\"].keys())\n                weights = []\n                for opt in options:\n                    desc = json.dumps(q_spec[\"criteria\"].get(opt) or \"\").lower()\n                    hits = sum(\n                        1\n                        for tok in (opt.lower(), *desc.split()[:10])\n                        if len(tok) > 3 and tok.strip('\"{}[],.:') in state_text_lower\n                    )\n                    weights.append(1.0 + hits * 3.5)\n                total_w = sum(weights)\n                probs = {opt: round(w / total_w, 4) for opt, w in zip(options, weights)}\n                top_opt = max(probs, key=lambda k: probs[k])\n                probs[top_opt] = round(max(0.0, min(1.0, probs[top_opt] + (1.0 - sum(probs.values())))), 4)\n                n_opts = len(options)\n                entropy = -sum(p * math.log(p) for p in probs.values() if p > 0)\n                max_ent = math.log(n_opts) if n_opts > 1 else 1.0\n                conf = round(max(0.0, min(1.0, 1.0 - (entropy / max_ent))), 4)\n                answers[q_id] = {\n                    \"type\": \"choice\",\n                    \"choice\": top_opt,\n                    \"probabilities\": probs,\n                    \"confidence\": conf,\n                }\n            elif q_type == \"score\":\n                levels = q_spec[\"criteria\"]\n                weights = []\n                for idx, lvl in enumerate(levels):\n                    lvl_str = json.dumps(lvl).lower() if isinstance(lvl, (dict, list)) else str(lvl).lower()\n                    hits = sum(\n                        1 for tok in lvl_str.split() if len(tok) > 3 and tok.strip('\"{}[],.:()') in state_text_lower\n                    )\n                    weights.append(1.0 + hits * 3.0)\n                total_w = sum(weights)\n                probs = {str(i): round(w / total_w, 4) for i, w in enumerate(weights)}\n                top_idx = max(probs, key=lambda k: probs[k])\n                probs[top_idx] = round(max(0.0, min(1.0, probs[top_idx] + (1.0 - sum(probs.values())))), 4)\n                weighted_score = round(sum(int(i) * p for i, p in probs.items()), 4)\n                n_lvls = len(levels)\n                entropy = -sum(p * math.log(p) for p in probs.values() if p > 0)\n                max_ent = math.log(n_lvls) if n_lvls > 1 else 1.0\n                conf = round(max(0.0, min(1.0, 1.0 - (entropy / max_ent))), 4)\n                answers[q_id] = {\n                    \"type\": \"score\",\n                    \"score\": weighted_score,\n                    \"legend\": {str(i): lvl for i, lvl in enumerate(levels)},\n                    \"probabilities\": probs,\n                    \"confidence\": conf,\n                }\n            elif q_type == \"noul\":\n                instr_tokens = [\n                    t.strip(\".,?!`\\\"'\") for t in str(q_spec.get(\"instructions\", \"\")).lower().split() if len(t) > 3\n                ]\n                hits = sum(1 for t in instr_tokens if t in state_text_lower)\n                p_yes = round(min(0.96, 0.20 + (hits * 0.22)), 4)\n                answers[q_id] = {\n                    \"type\": \"noul\",\n                    \"noul\": p_yes,\n                }\n\n        return {\n            \"model\": f\"{model} (mock)\",\n            \"answers\": answers,\n            \"usage\": {\"input_tokens\": 64, \"output_tokens\": len(questions) * 4},\n        }\n\n    def _call_jev_api(\n        self,\n        model: str,\n        state: Any,\n        questions: dict[str, dict[str, Any]],\n    ) -> dict[str, Any]:\n        \"\"\"Calls POST {base_url}/v1/systemone with Local Kev defaults.\"\"\"\n        api_key = self._resolve_api_key()\n        if not api_key:\n            raise ValueError(\n                \"Missing API Key for external endpoint. Provide a TypeSafe/Jev API key or point \"\n                \"API Base URL to your local Kev server (http://kev-server:8009 or http://localhost:8009).\"\n            )\n\n        base = (self.base_url or \"http://kev-server:8009\").strip().rstrip(\"/\")\n        endpoint = base if base.endswith(\"/v1/systemone\") else f\"{base}/v1/systemone\"\n\n        headers: dict[str, str] = {\n            \"Authorization\": f\"Bearer {api_key}\",\n            \"Content-Type\": \"application/json\",\n            \"Accept\": \"application/json\",\n        }\n        if getattr(self, \"enable_long_context\", False):\n            headers[\"TypeSafe-Danger-Zone-Long-Context\"] = \"true\"\n\n        payload = {\n            \"model\": model,\n            \"state\": state,\n            \"questions\": questions,\n        }\n\n        timeout = float(getattr(self, \"timeout_seconds\", 15.0) or 15.0)\n        max_retries = max(0, int(getattr(self, \"max_retries\", 2) or 0))\n\n        last_error: Exception | None = None\n        for attempt in range(max_retries + 1):\n            try:\n                with httpx.Client(timeout=timeout) as client:\n                    response = client.post(endpoint, headers=headers, json=payload)\n\n                if response.status_code == 200:\n                    body = response.json()\n                    if isinstance(body, dict) and \"answers\" not in body and isinstance(body.get(\"data\"), dict):\n                        return dict(body[\"data\"])\n                    return body\n\n                if response.status_code in (429, 502, 503, 504, 529) and attempt < max_retries:\n                    time.sleep(min(0.3 * (2**attempt), 4.0))\n                    continue\n\n                try:\n                    err_detail = response.json()\n                except Exception:\n                    err_detail = response.text\n                raise RuntimeError(\n                    f\"System 1 API Error (HTTP {response.status_code} at {endpoint}): {err_detail}\"\n                )\n            except (httpx.TimeoutException, httpx.NetworkError) as exc:\n                last_error = exc\n                if attempt < max_retries:\n                    time.sleep(0.3 * (2**attempt))\n                    continue\n                if getattr(self, \"mock_mode_if_unreachable\", False):\n                    return self._simulate_mock_response(model, state, questions)\n                raise RuntimeError(\n                    f\"Could not reach Kev/Jev endpoint at '{endpoint}' after {attempt + 1} attempts: {exc}.\"\n                ) from exc\n\n        raise RuntimeError(f\"Request failed: {last_error}\")\n\n    def _compute_entropy_confidence(self, prob_list: list[float]) -> float:\n        \"\"\"Fallback normalized Shannon entropy confidence when a local checkpoint omits confidence.\"\"\"\n        n = len(prob_list)\n        if n <= 1:\n            return 1.0\n        total = sum(prob_list)\n        if total <= 0:\n            return 0.0\n        normed = [p / total for p in prob_list if p > 0]\n        entropy = -sum(p * math.log(p) for p in normed)\n        max_entropy = math.log(n)\n        return round(max(0.0, min(1.0, 1.0 - (entropy / max_entropy))), 4)\n\n    def _evaluate_entry(\n        self,\n        entry: dict[str, Any],\n        answers_map: dict[str, Any],\n    ) -> dict[str, Any]:\n        \"\"\"Evaluates Choice, Manual-Value Score (sum=1.0), and Noul questions.\"\"\"\n        q_id = str(entry[\"question_id\"])\n        api_spec = entry[\"api_spec\"]\n        policy = entry.get(\"policy\") or {}\n        q_type = api_spec[\"type\"]\n        raw_ans = answers_map.get(q_id) or {}\n\n        if q_type == \"choice\":\n            criteria_map: dict[str, Any] = api_spec.get(\"criteria\") or {}\n            raw_probs: dict[str, Any] = raw_ans.get(\"probabilities\") or {}\n            probs: dict[str, float] = {str(k): float(v) for k, v in raw_probs.items()}\n\n            selected_choice = str(raw_ans.get(\"choice\") or \"\")\n            if not selected_choice and probs:\n                selected_choice = max(probs, key=lambda k: probs[k])\n\n            raw_conf = raw_ans.get(\"confidence\")\n            confidence = (\n                float(raw_conf)\n                if raw_conf is not None\n                else self._compute_entropy_confidence(list(probs.values()))\n            )\n\n            top_prob = float(probs.get(selected_choice, 0.0))\n            sorted_probs = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)\n            runner_up = sorted_probs[1][0] if len(sorted_probs) > 1 else None\n            margin = round(top_prob - float(sorted_probs[1][1]), 4) if len(sorted_probs) > 1 else 1.0\n\n            min_conf = float(policy.get(\"min_confidence\", 0.65))\n            fallback_label = str(policy.get(\"low_confidence_label\", \"HUMAN_REVIEW\"))\n            route_aliases: dict[str, str] = policy.get(\"route_aliases\") or {}\n\n            meets_conf = confidence >= min_conf\n            mapped_choice_route = route_aliases.get(selected_choice, selected_choice)\n            route_label = mapped_choice_route if meets_conf else fallback_label\n            lane = \"AUTO_ACT\" if meets_conf else \"HUMAN_REVIEW\"\n\n            return {\n                \"question_id\": q_id,\n                \"type\": \"choice\",\n                \"raw_decision\": selected_choice,\n                \"route_label\": route_label,\n                \"lane\": lane,\n                \"primary_metric\": round(top_prob, 4),\n                \"confidence\": round(confidence, 4),\n                \"meets_threshold\": meets_conf,\n                \"manual_score\": None,\n                \"winning_item_name\": selected_choice,\n                \"winning_item_manual_value\": None,\n                \"cumulative_manual_score\": None,\n                \"item_contributions\": {},\n                \"probabilities\": probs,\n                \"matched_description\": str(criteria_map.get(selected_choice) or selected_choice),\n            }\n\n        if q_type == \"score\":\n            criteria_list: list[Any] = api_spec.get(\"criteria\") or []\n            n_levels = len(criteria_list)\n            level_tags: list[str] = policy.get(\"level_tags\") or [f\"item_{i}\" for i in range(n_levels)]\n            calc_mode = str(policy.get(\"score_calculation_mode\", \"weighted_sum_probabilities\"))\n\n            # Retrieve manual values (summing to 1.0); if not provided, distribute evenly so sum == 1.0\n            raw_manual_vals = policy.get(\"manual_values\")\n            if isinstance(raw_manual_vals, list) and len(raw_manual_vals) == n_levels:\n                manual_values = [float(v) for v in raw_manual_vals]\n            else:\n                manual_values = [round(1.0 / max(1, n_levels), 6) for _ in range(n_levels)]\n\n            if calc_mode == \"independent_criteria_accumulation\":\n                # Each row was evaluated as its own sub-question __sub_{i} in parallel\n                prob_vector: list[float] = []\n                for idx in range(n_levels):\n                    sub_key = f\"{q_id}__item_{idx}\"\n                    sub_ans = answers_map.get(sub_key) or {}\n                    p_yes = float(sub_ans.get(\"noul\", 0.0))\n                    prob_vector.append(p_yes)\n\n                contributions = {\n                    level_tags[i]: round(manual_values[i] * prob_vector[i], 4)\n                    for i in range(n_levels)\n                }\n                labeled_probs = {\n                    f\"{level_tags[i]} (val={manual_values[i]:.2f})\": round(prob_vector[i], 4)\n                    for i in range(n_levels)\n                }\n                accumulated_score = round(sum(contributions.values()), 4)\n                peak_idx = max(range(n_levels), key=lambda i: contributions[level_tags[i]])\n                winning_tag = level_tags[peak_idx]\n                winning_manual_val = round(manual_values[peak_idx], 4)\n                cumulative_val = accumulated_score\n                # Average directional certainty across the sub-questions\n                confidence = round(\n                    sum(abs(2.0 * p - 1.0) for p in prob_vector) / max(1, n_levels),\n                    4,\n                )\n                final_manual_score = accumulated_score\n            else:\n                # Single Kev 'score' primitive call with manual level values\n                raw_probs_dict = raw_ans.get(\"probabilities\") or {}\n                prob_vector = []\n                for idx in range(n_levels):\n                    val = raw_probs_dict.get(str(idx))\n                    if val is None:\n                        val = raw_probs_dict.get(idx)\n                    if val is None and idx < len(criteria_list):\n                        val = raw_probs_dict.get(str(criteria_list[idx]))\n                    prob_vector.append(float(val) if val is not None else 0.0)\n\n                prob_sum = sum(prob_vector)\n                if prob_sum > 0:\n                    prob_vector = [p / prob_sum for p in prob_vector]\n\n                contributions = {\n                    level_tags[i]: round(manual_values[i] * prob_vector[i], 4)\n                    for i in range(n_levels)\n                }\n                labeled_probs = {\n                    f\"{level_tags[i]} (val={manual_values[i]:.2f})\": round(prob_vector[i], 4)\n                    for i in range(n_levels)\n                }\n\n                weighted_manual_score = round(sum(manual_values[i] * prob_vector[i] for i in range(n_levels)), 4)\n                peak_idx = (\n                    max(range(n_levels), key=lambda i: prob_vector[i])\n                    if prob_sum > 0\n                    else 0\n                )\n                winning_tag = level_tags[peak_idx]\n                winning_manual_val = round(manual_values[peak_idx], 4)\n                cumulative_val = round(sum(manual_values[: peak_idx + 1]), 4)\n\n                if calc_mode == \"winning_item_value\":\n                    final_manual_score = winning_manual_val\n                elif calc_mode == \"cumulative_up_to_winner\":\n                    final_manual_score = cumulative_val\n                else:\n                    final_manual_score = weighted_manual_score\n\n                raw_conf = raw_ans.get(\"confidence\")\n                confidence = (\n                    float(raw_conf)\n                    if raw_conf is not None\n                    else self._compute_entropy_confidence(prob_vector)\n                )\n\n            min_conf = float(policy.get(\"min_confidence\", 0.55))\n            fallback_label = str(policy.get(\"low_confidence_label\", \"HUMAN_REVIEW\"))\n            routing_mode = str(policy.get(\"routing_mode\", \"winning_item_name\"))\n            score_cutoff = float(policy.get(\"score_cutoff\", 0.50))\n            high_label = str(policy.get(\"high_score_label\", \"HIGH_SCORE\"))\n            low_label = str(policy.get(\"low_score_label\", \"LOW_SCORE\"))\n\n            meets_conf = confidence >= min_conf\n            if not meets_conf:\n                lane = \"HUMAN_REVIEW\"\n                route_label = fallback_label\n            elif routing_mode == \"threshold_pass_fail\":\n                if final_manual_score >= score_cutoff:\n                    lane = \"AUTO_ACT\"\n                    route_label = high_label\n                else:\n                    lane = \"BELOW_SCORE_THRESHOLD\"\n                    route_label = low_label\n            elif routing_mode == \"manual_score_value\":\n                lane = \"AUTO_ACT\"\n                route_label = f\"{final_manual_score:.4f}\".rstrip(\"0\").rstrip(\".\")\n            else:\n                lane = \"AUTO_ACT\"\n                route_label = winning_tag\n\n            matched_desc = str(criteria_list[peak_idx]) if peak_idx < len(criteria_list) else \"\"\n\n            return {\n                \"question_id\": q_id,\n                \"type\": \"score\",\n                \"raw_decision\": final_manual_score,\n                \"route_label\": route_label,\n                \"lane\": lane,\n                \"primary_metric\": final_manual_score,\n                \"confidence\": round(confidence, 4),\n                \"meets_threshold\": meets_conf,\n                \"manual_score\": final_manual_score,\n                \"winning_item_name\": winning_tag,\n                \"winning_item_manual_value\": winning_manual_val,\n                \"cumulative_manual_score\": cumulative_val,\n                \"manual_values_map\": {level_tags[i]: manual_values[i] for i in range(n_levels)},\n                \"item_contributions\": contributions,\n                \"probabilities\": labeled_probs,\n                \"matched_description\": matched_desc,\n                # Backward-compatible keys for KevQuestionResultExtractor\n                \"score_custom_scaled\": final_manual_score,\n                \"score_normalized_pct\": round(final_manual_score * 100.0, 2),\n                \"score_native\": final_manual_score,\n                \"nearest_level_tag\": winning_tag,\n                \"peak_level_tag\": winning_tag,\n            }\n\n        if q_type == \"noul\":\n            noul_prob = float(raw_ans.get(\"noul\", 0.0))\n            yes_thresh = float(policy.get(\"yes_threshold\", 0.70))\n            no_thresh = float(policy.get(\"no_threshold\", 0.30))\n            yes_label = str(policy.get(\"yes_route_label\", \"YES\"))\n            no_label = str(policy.get(\"no_route_label\", \"NO\"))\n            uncertain_label = str(policy.get(\"uncertain_route_label\", \"HUMAN_REVIEW\"))\n\n            directional_certainty = round(abs(2.0 * noul_prob - 1.0), 4)\n\n            if noul_prob >= yes_thresh:\n                raw_decision = \"YES\"\n                route_label = yes_label\n                lane = \"AUTO_ACT\"\n                meets = True\n            elif noul_prob <= no_thresh:\n                raw_decision = \"NO\"\n                route_label = no_label\n                lane = \"REJECT_OR_NO\"\n                meets = True\n            else:\n                raw_decision = \"UNCERTAIN\"\n                route_label = uncertain_label\n                lane = \"HUMAN_REVIEW\"\n                meets = False\n\n            return {\n                \"question_id\": q_id,\n                \"type\": \"noul\",\n                \"raw_decision\": raw_decision,\n                \"route_label\": route_label,\n                \"lane\": lane,\n                \"primary_metric\": round(noul_prob, 4),\n                \"confidence\": directional_certainty,\n                \"meets_threshold\": meets,\n                \"manual_score\": round(noul_prob, 4),\n                \"winning_item_name\": raw_decision,\n                \"winning_item_manual_value\": None,\n                \"cumulative_manual_score\": None,\n                \"item_contributions\": {},\n                \"probabilities\": {\"true\": round(noul_prob, 4), \"false\": round(1.0 - noul_prob, 4)},\n                \"matched_description\": f\"P(yes)={noul_prob:.2f} [YES>={yes_thresh}, NO<={no_thresh}]\",\n            }\n\n        raise ValueError(f\"Unsupported question type: {q_type}\")\n\n    def _execute_once(self) -> dict[str, Any]:\n        \"\"\"Executes the batched parallel /v1/systemone request once and caches the result.\"\"\"\n        cache_key = \"_kev_core_engine_result\"\n        if hasattr(self, \"ctx\") and isinstance(self.ctx, dict) and cache_key in self.ctx:\n            return self.ctx[cache_key]\n        if hasattr(self, \"_cached_result\") and self._cached_result is not None:\n            return self._cached_result\n\n        model = self._resolve_model_name()\n        state = self._build_state_payload()\n        entries = self._collect_question_entries()\n\n        questions_payload: dict[str, dict[str, Any]] = {}\n        for entry in entries:\n            q_id = str(entry[\"question_id\"])\n            api_spec = entry[\"api_spec\"]\n            policy = entry.get(\"policy\") or {}\n\n            # If a Score node is set to 'independent_criteria_accumulation', expand each item\n            # into a parallel Noul check so each item's manual_value * P(item) accumulates to 1.0\n            if (\n                api_spec.get(\"type\") == \"score\"\n                and policy.get(\"score_calculation_mode\") == \"independent_criteria_accumulation\"\n            ):\n                base_instr = str(api_spec.get(\"instructions\") or \"\")\n                descriptions = api_spec.get(\"criteria\") or []\n                tags = policy.get(\"level_tags\") or []\n                for idx, desc in enumerate(descriptions):\n                    tag_name = tags[idx] if idx < len(tags) else f\"item_{idx}\"\n                    questions_payload[f\"{q_id}__item_{idx}\"] = {\n                        \"type\": \"noul\",\n                        \"instructions\": f\"{base_instr} \u2014 Specifically regarding '{tag_name}': {desc}\",\n                    }\n            else:\n                questions_payload[q_id] = api_spec\n\n        raw_response = self._call_jev_api(model=model, state=state, questions=questions_payload)\n        answers_map: dict[str, Any] = raw_response.get(\"answers\") or {}\n\n        evaluations: dict[str, dict[str, Any]] = {}\n        for entry in entries:\n            q_id = str(entry[\"question_id\"])\n            evaluations[q_id] = self._evaluate_entry(entry, answers_map)\n\n        first_q_id = str(entries[0][\"question_id\"])\n        first_eval = evaluations[first_q_id]\n        any_review = any(ev[\"lane\"] == \"HUMAN_REVIEW\" for ev in evaluations.values())\n\n        bundle = {\n            \"model\": raw_response.get(\"model\", model),\n            \"endpoint\": (self.base_url or \"http://kev-server:8009\").strip(),\n            \"first_question_id\": first_q_id,\n            \"first_decision\": first_eval,\n            \"all_confident\": not any_review,\n            \"overall_gate\": \"HUMAN_REVIEW\" if any_review else \"ALL_CLEAR\",\n            \"routes_by_question\": {q_id: ev[\"route_label\"] for q_id, ev in evaluations.items()},\n            \"evaluations\": evaluations,\n            \"raw_answers\": answers_map,\n            \"usage\": raw_response.get(\"usage\", {}),\n            \"request_state\": state,\n            \"request_questions\": questions_payload,\n        }\n\n        self._cached_result = bundle\n        if hasattr(self, \"ctx\") and isinstance(self.ctx, dict):\n            try:\n                self.ctx[cache_key] = bundle\n            except Exception:\n                pass\n\n        route_pairs = \", \".join(f\"{k}:{v}\" for k, v in bundle[\"routes_by_question\"].items())\n        self.status = f\"[{bundle['model']}] {route_pairs}\"\n        return bundle\n\n    def build_overall_route(self) -> Message:\n        \"\"\"Output 1: Emits the primary or overall route string for Conditional Routers.\"\"\"\n        bundle = self._execute_once()\n        mode = getattr(self, \"overall_route_mode\", \"first_question_route\") or \"first_question_route\"\n\n        if mode == \"all_clear_or_review\":\n            text = str(bundle[\"overall_gate\"])\n        elif mode == \"combined_key_value_routes\":\n            text = \" | \".join(f\"{k}={v}\" for k, v in bundle[\"routes_by_question\"].items())\n        elif mode == \"json_routes_map\":\n            text = json.dumps(bundle[\"routes_by_question\"], ensure_ascii=False)\n        else:\n            text = str(bundle[\"first_decision\"][\"route_label\"])\n\n        return Message(text=text, sender=\"KevCoreEngine\", sender_name=\"Kev Core Router\")\n\n    def build_all_decisions_data(self) -> Data:\n        \"\"\"Output 2: Emits the full structured Data object for Kev Question Result Extractors.\"\"\"\n        bundle = self._execute_once()\n        return Data(data=bundle, text_key=\"overall_gate\")\n\n    def build_decisions_table(self) -> DataFrame:\n        \"\"\"Output 3: Emits a DataFrame showing manual values, weighted contributions, and routes.\"\"\"\n        bundle = self._execute_once()\n        rows: list[dict[str, Any]] = []\n        for q_id, ev in bundle[\"evaluations\"].items():\n            rows.append(\n                {\n                    \"question_id\": q_id,\n                    \"type\": ev[\"type\"],\n                    \"raw_decision\": ev[\"raw_decision\"],\n                    \"route_label\": ev[\"route_label\"],\n                    \"policy_lane\": ev[\"lane\"],\n                    \"manual_score\": ev.get(\"manual_score\"),\n                    \"winning_item\": ev.get(\"winning_item_name\"),\n                    \"winning_item_manual_value\": ev.get(\"winning_item_manual_value\"),\n                    \"confidence_or_cert\": ev[\"confidence\"],\n                    \"item_contributions\": json.dumps(ev.get(\"item_contributions\", {}), ensure_ascii=False),\n                    \"probabilities\": json.dumps(ev[\"probabilities\"], ensure_ascii=False),\n                }\n            )\n        return DataFrame(pd.DataFrame(rows))\n\n    def build_agent_summary(self) -> Message:\n        \"\"\"Output 4: Emits a Markdown report of all parallel decisions and manual weight breakdowns.\"\"\"\n        bundle = self._execute_once()\n        lines = [\n            f\"### Kev System 1 Parallel Decisions (`{bundle['model']}`)\",\n        ]\n        for q_id, ev in bundle[\"evaluations\"].items():\n            q_type = ev[\"type\"]\n            if q_type == \"choice\":\n                lines.append(\n                    f\"- **`{q_id}` [Choice]:** `{ev['raw_decision']}` \"\n                    f\"(P={ev['primary_metric']:.2f}, Conf={ev['confidence']:.2f}) \"\n                    f\"-> Route: **`{ev['route_label']}`** ({ev['lane']})\"\n                )\n            elif q_type == \"score\":\n                contribs = ev.get(\"item_contributions\") or {}\n                contrib_str = \", \".join(f\"{k}: {v:.3f}\" for k, v in contribs.items())\n                lines.append(\n                    f\"- **`{q_id}` [Manual Score]:** **`{ev['manual_score']:.4f}`** / `1.00` \"\n                    f\"(Top Item: `{ev['winning_item_name']}` [manual value=`{ev['winning_item_manual_value']}`], \"\n                    f\"Contributions: {{{contrib_str}}}, Conf={ev['confidence']:.2f}) \"\n                    f\"-> Route: **`{ev['route_label']}`** ({ev['lane']})\"\n                )\n            elif q_type == \"noul\":\n                lines.append(\n                    f\"- **`{q_id}` [Noul]:** `{ev['raw_decision']}` \"\n                    f\"(P(yes)={ev['primary_metric']:.2f}, Certainty={ev['confidence']:.2f}) \"\n                    f\"-> Route: **`{ev['route_label']}`** ({ev['lane']})\"\n                )\n        return Message(text=\"\\n\".join(lines), sender=\"KevCoreEngine\", sender_name=\"Kev Summary\")",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "custom_model_name": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": false,
+                "name": "custom_model_name",
+                "value": "kev-latest",
+                "display_name": "Custom Model ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Specify a custom model tag when 'Model Version / Alias' is set to 'custom'.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "enable_long_context": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "enable_long_context",
+                "value": false,
+                "display_name": "Enable Long Context Header",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Sends 'TypeSafe-Danger-Zone-Long-Context: true' header.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "bool",
+                "_input_type": "BoolInput"
+              },
+              "extra_state_fields": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "extra_state_fields",
+                "value": {},
+                "display_name": "Additional State Metadata (JSON)",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Optional key-value facts merged into the state JSON object.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "NestedDict",
+                "_input_type": "NestedDictInput"
+              },
+              "max_retries": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "max_retries",
+                "value": 2,
+                "display_name": "Max Retries",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Automatic retries on HTTP 429/502/503/504/529 or transient network errors.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "int",
+                "_input_type": "IntInput"
+              },
+              "mock_mode_if_unreachable": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "mock_mode_if_unreachable",
+                "value": false,
+                "display_name": "Fallback to Mock Simulator if Server Unreachable",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "If enabled, simulates calibrated responses locally when the Kev server is offline.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "bool",
+                "_input_type": "BoolInput"
+              },
+              "model_name": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "kev-latest",
+                  "jev-latest",
+                  "kev-4b",
+                  "kev-9b",
+                  "kev-27b",
+                  "kev-0.8b",
+                  "custom"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "model_name",
+                "value": "kev-latest",
+                "display_name": "Model Version / Alias",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Target model identifier. Default is 'kev-latest' for the local Kev server.",
+                "real_time_refresh": true,
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "overall_route_mode": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "first_question_route",
+                  "all_clear_or_review",
+                  "combined_key_value_routes",
+                  "json_routes_map"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "overall_route_mode",
+                "value": "first_question_route",
+                "display_name": "Overall Route Output Mode",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Controls what 'Primary / Overall Route' emits for downstream Conditional Routers.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "state_format_mode": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "auto",
+                  "string",
+                  "json_object",
+                  "text_array"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "state_format_mode",
+                "value": "auto",
+                "display_name": "State Format Mode",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Controls how 'state' is formatted in the POST /v1/systemone request.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "state_text": {
+                "tool_mode": true,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "state_text",
+                "value": "",
+                "display_name": "State Text / Message",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "Primary text or message to evaluate against all connected questions.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "MessageTextInput"
+              },
+              "timeout_seconds": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "timeout_seconds",
+                "value": 15,
+                "display_name": "Request Timeout (Seconds)",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "HTTP timeout in seconds for the /v1/systemone call.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "float",
+                "_input_type": "FloatInput"
+              }
+            },
+            "description": "Evaluates all connected Choice, Manual-Value Score, and Noul GUI Question nodes in parallel in a single /v1/systemone pass. Configured with Local Kev defaults.",
+            "icon": "Cpu",
+            "base_classes": [
+              "JSON",
+              "Message",
+              "Table"
+            ],
+            "display_name": "JEV System 1 Core Engine",
+            "priority": 1,
+            "documentation": "https://docs.typesafe.ai/concepts/system-one",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "overall_route",
+                "hidden": null,
+                "display_name": "Primary / Overall Route",
+                "method": "build_overall_route",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "all_decisions_data",
+                "hidden": null,
+                "display_name": "All Decisions Data",
+                "method": "build_all_decisions_data",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "Table"
+                ],
+                "selected": "Table",
+                "name": "decisions_table",
+                "hidden": null,
+                "display_name": "Decisions Table",
+                "method": "build_decisions_table",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "agent_summary",
+                "hidden": null,
+                "display_name": "Agent Summary",
+                "method": "build_agent_summary",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "base_url",
+              "model_name",
+              "custom_model_name",
+              "api_key",
+              "question_specs",
+              "state_text",
+              "state_data",
+              "state_format_mode",
+              "extra_state_fields",
+              "overall_route_mode",
+              "timeout_seconds",
+              "max_retries",
+              "enable_long_context",
+              "mock_mode_if_unreachable"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevSystemOneCoreEngine",
+              "module": "custom_components.kev_system_1_core_engine",
+              "code_hash": "c91ddb9bd7f5",
+              "dependencies": {
+                "total_dependencies": 3,
+                "dependencies": [
+                  {
+                    "name": "httpx",
+                    "version": "0.28.1"
+                  },
+                  {
+                    "name": "pandas",
+                    "version": "2.3.3"
+                  },
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "engine-node-1",
+        "position": {
+          "x": 600,
+          "y": 450
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevQuestionResultExtractor-UXgTB",
+          "type": "KevQuestionResultExtractor",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "decisions_data": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "decisions_data",
+                "value": "",
+                "display_name": "All Decisions Data (From Core Engine)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Connect the 'All Decisions Data' output from Kev System 1 Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "import json\nfrom typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    DataInput,\n    DropdownInput,\n    Output,\n    StrInput,\n)\nfrom lfx.schema.data import Data\nfrom lfx.schema.message import Message\n\n\nclass KevQuestionResultExtractor(Component):\n    \"\"\"Extracts a specific question's route label, score, or probability from the Core Engine's output.\"\"\"\n\n    display_name: str = \"Kev Question Result Extractor\"\n    description: str = (\n        \"Selects a single question_id from 'Kev System 1 Core Engine' results so you can \"\n        \"wire each parallel question to its own downstream Conditional Router.\"\n    )\n    icon: str = \"Split\"\n    name: str = \"KevQuestionResultExtractor\"\n\n    inputs = [\n        DataInput(\n            name=\"decisions_data\",\n            display_name=\"All Decisions Data (From Core Engine)\",\n            info=\"Connect the 'All Decisions Data' output from Kev System 1 Core Engine.\",\n            required=True,\n        ),\n        StrInput(\n            name=\"target_question_id\",\n            display_name=\"Target Question ID\",\n            value=\"severity\",\n            info=\"Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').\",\n            required=True,\n        ),\n        DropdownInput(\n            name=\"extract_field\",\n            display_name=\"Route Message Field\",\n            options=[\n                \"route_label\",\n                \"raw_decision\",\n                \"score_custom_scaled\",\n                \"score_normalized_pct\",\n                \"score_native\",\n                \"nearest_level_tag\",\n                \"peak_level_tag\",\n                \"policy_lane\",\n            ],\n            value=\"route_label\",\n            info=\"Determines which value is emitted as text on the 'Question Route' port.\",\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Question Route / Value\",\n            name=\"question_route\",\n            method=\"extract_route_message\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"Question Details Data\",\n            name=\"question_details\",\n            method=\"extract_question_data\",\n            group_outputs=True,\n        ),\n    ]\n\n    def _get_target_evaluation(self) -> dict[str, Any]:\n        raw = self.decisions_data\n        payload = raw.data if hasattr(raw, \"data\") and isinstance(raw.data, dict) else raw\n        if not isinstance(payload, dict) or \"evaluations\" not in payload:\n            raise ValueError(\n                \"Invalid input on 'All Decisions Data'. Connect the 'All Decisions Data' port \"\n                \"from Kev System 1 Core Engine.\"\n            )\n\n        evaluations: dict[str, dict[str, Any]] = payload[\"evaluations\"]\n        target_id = (self.target_question_id or \"\").strip()\n        if not target_id:\n            first_id = next(iter(evaluations.keys()))\n            return evaluations[first_id]\n\n        if target_id not in evaluations:\n            available = \", \".join(evaluations.keys())\n            raise ValueError(\n                f\"Question ID '{target_id}' not found in Core Engine results. \"\n                f\"Available Question IDs: [{available}]\"\n            )\n        return evaluations[target_id]\n\n    def extract_route_message(self) -> Message:\n        ev = self._get_target_evaluation()\n        field = self.extract_field or \"route_label\"\n        field_map = {\n            \"route_label\": ev.get(\"route_label\"),\n            \"raw_decision\": ev.get(\"raw_decision\"),\n            \"score_custom_scaled\": ev.get(\"score_custom_scaled\"),\n            \"score_normalized_pct\": ev.get(\"score_normalized_pct\"),\n            \"score_native\": ev.get(\"score_native\"),\n            \"nearest_level_tag\": ev.get(\"nearest_level_tag\"),\n            \"peak_level_tag\": ev.get(\"peak_level_tag\"),\n            \"policy_lane\": ev.get(\"lane\"),\n        }\n        val = field_map.get(field, ev.get(\"route_label\"))\n        text_val = json.dumps(val) if isinstance(val, (dict, list)) else str(val if val is not None else \"\")\n        self.status = f\"{ev['question_id']} ({field}) -> {text_val}\"\n        return Message(text=text_val, sender=\"KevExtractor\", sender_name=f\"Kev [{ev['question_id']}]\")\n\n    def extract_question_data(self) -> Data:\n        ev = self._get_target_evaluation()\n        return Data(data=ev, text_key=\"route_label\")",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "extract_field": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "route_label",
+                  "raw_decision",
+                  "score_custom_scaled",
+                  "score_normalized_pct",
+                  "score_native",
+                  "nearest_level_tag",
+                  "peak_level_tag",
+                  "policy_lane"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "extract_field",
+                "value": "route_label",
+                "display_name": "Route Message Field",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Determines which value is emitted as text on the 'Question Route' port.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "target_question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "target_question_id",
+                "value": "department",
+                "display_name": "Target Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              }
+            },
+            "description": "Selects a single question_id from 'Kev System 1 Core Engine' results so you can wire each parallel question to its own downstream Conditional Router.",
+            "icon": "Split",
+            "base_classes": [
+              "JSON",
+              "Message"
+            ],
+            "display_name": "JEV Question Result Extractor",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "question_route",
+                "hidden": null,
+                "display_name": "Question Route / Value",
+                "method": "extract_route_message",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_details",
+                "hidden": null,
+                "display_name": "Question Details Data",
+                "method": "extract_question_data",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "decisions_data",
+              "target_question_id",
+              "extract_field"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevQuestionResultExtractor",
+              "module": "custom_components.kev_question_result_extractor",
+              "code_hash": "d903a3ff9d91",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "extractor-choice-1",
+        "position": {
+          "x": 1100,
+          "y": 150
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevQuestionResultExtractor-UXgTB",
+          "type": "KevQuestionResultExtractor",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "decisions_data": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "decisions_data",
+                "value": "",
+                "display_name": "All Decisions Data (From Core Engine)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Connect the 'All Decisions Data' output from Kev System 1 Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "import json\nfrom typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    DataInput,\n    DropdownInput,\n    Output,\n    StrInput,\n)\nfrom lfx.schema.data import Data\nfrom lfx.schema.message import Message\n\n\nclass KevQuestionResultExtractor(Component):\n    \"\"\"Extracts a specific question's route label, score, or probability from the Core Engine's output.\"\"\"\n\n    display_name: str = \"Kev Question Result Extractor\"\n    description: str = (\n        \"Selects a single question_id from 'Kev System 1 Core Engine' results so you can \"\n        \"wire each parallel question to its own downstream Conditional Router.\"\n    )\n    icon: str = \"Split\"\n    name: str = \"KevQuestionResultExtractor\"\n\n    inputs = [\n        DataInput(\n            name=\"decisions_data\",\n            display_name=\"All Decisions Data (From Core Engine)\",\n            info=\"Connect the 'All Decisions Data' output from Kev System 1 Core Engine.\",\n            required=True,\n        ),\n        StrInput(\n            name=\"target_question_id\",\n            display_name=\"Target Question ID\",\n            value=\"severity\",\n            info=\"Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').\",\n            required=True,\n        ),\n        DropdownInput(\n            name=\"extract_field\",\n            display_name=\"Route Message Field\",\n            options=[\n                \"route_label\",\n                \"raw_decision\",\n                \"score_custom_scaled\",\n                \"score_normalized_pct\",\n                \"score_native\",\n                \"nearest_level_tag\",\n                \"peak_level_tag\",\n                \"policy_lane\",\n            ],\n            value=\"route_label\",\n            info=\"Determines which value is emitted as text on the 'Question Route' port.\",\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Question Route / Value\",\n            name=\"question_route\",\n            method=\"extract_route_message\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"Question Details Data\",\n            name=\"question_details\",\n            method=\"extract_question_data\",\n            group_outputs=True,\n        ),\n    ]\n\n    def _get_target_evaluation(self) -> dict[str, Any]:\n        raw = self.decisions_data\n        payload = raw.data if hasattr(raw, \"data\") and isinstance(raw.data, dict) else raw\n        if not isinstance(payload, dict) or \"evaluations\" not in payload:\n            raise ValueError(\n                \"Invalid input on 'All Decisions Data'. Connect the 'All Decisions Data' port \"\n                \"from Kev System 1 Core Engine.\"\n            )\n\n        evaluations: dict[str, dict[str, Any]] = payload[\"evaluations\"]\n        target_id = (self.target_question_id or \"\").strip()\n        if not target_id:\n            first_id = next(iter(evaluations.keys()))\n            return evaluations[first_id]\n\n        if target_id not in evaluations:\n            available = \", \".join(evaluations.keys())\n            raise ValueError(\n                f\"Question ID '{target_id}' not found in Core Engine results. \"\n                f\"Available Question IDs: [{available}]\"\n            )\n        return evaluations[target_id]\n\n    def extract_route_message(self) -> Message:\n        ev = self._get_target_evaluation()\n        field = self.extract_field or \"route_label\"\n        field_map = {\n            \"route_label\": ev.get(\"route_label\"),\n            \"raw_decision\": ev.get(\"raw_decision\"),\n            \"score_custom_scaled\": ev.get(\"score_custom_scaled\"),\n            \"score_normalized_pct\": ev.get(\"score_normalized_pct\"),\n            \"score_native\": ev.get(\"score_native\"),\n            \"nearest_level_tag\": ev.get(\"nearest_level_tag\"),\n            \"peak_level_tag\": ev.get(\"peak_level_tag\"),\n            \"policy_lane\": ev.get(\"lane\"),\n        }\n        val = field_map.get(field, ev.get(\"route_label\"))\n        text_val = json.dumps(val) if isinstance(val, (dict, list)) else str(val if val is not None else \"\")\n        self.status = f\"{ev['question_id']} ({field}) -> {text_val}\"\n        return Message(text=text_val, sender=\"KevExtractor\", sender_name=f\"Kev [{ev['question_id']}]\")\n\n    def extract_question_data(self) -> Data:\n        ev = self._get_target_evaluation()\n        return Data(data=ev, text_key=\"route_label\")",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "extract_field": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "route_label",
+                  "raw_decision",
+                  "score_custom_scaled",
+                  "score_normalized_pct",
+                  "score_native",
+                  "nearest_level_tag",
+                  "peak_level_tag",
+                  "policy_lane"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "extract_field",
+                "value": "route_label",
+                "display_name": "Route Message Field",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Determines which value is emitted as text on the 'Question Route' port.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "target_question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "target_question_id",
+                "value": "requests_refund",
+                "display_name": "Target Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              }
+            },
+            "description": "Selects a single question_id from 'Kev System 1 Core Engine' results so you can wire each parallel question to its own downstream Conditional Router.",
+            "icon": "Split",
+            "base_classes": [
+              "JSON",
+              "Message"
+            ],
+            "display_name": "JEV Question Result Extractor",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "question_route",
+                "hidden": null,
+                "display_name": "Question Route / Value",
+                "method": "extract_route_message",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_details",
+                "hidden": null,
+                "display_name": "Question Details Data",
+                "method": "extract_question_data",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "decisions_data",
+              "target_question_id",
+              "extract_field"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevQuestionResultExtractor",
+              "module": "custom_components.kev_question_result_extractor",
+              "code_hash": "d903a3ff9d91",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "extractor-noul-1",
+        "position": {
+          "x": 1100,
+          "y": 450
+        },
+        "type": "genericNode"
+      },
+      {
+        "data": {
+          "id": "KevQuestionResultExtractor-UXgTB",
+          "type": "KevQuestionResultExtractor",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "decisions_data": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "decisions_data",
+                "value": "",
+                "display_name": "All Decisions Data (From Core Engine)",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "Connect the 'All Decisions Data' output from Kev System 1 Core Engine.",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "import json\nfrom typing import Any\n\nfrom lfx.custom.custom_component.component import Component\nfrom lfx.io import (\n    DataInput,\n    DropdownInput,\n    Output,\n    StrInput,\n)\nfrom lfx.schema.data import Data\nfrom lfx.schema.message import Message\n\n\nclass KevQuestionResultExtractor(Component):\n    \"\"\"Extracts a specific question's route label, score, or probability from the Core Engine's output.\"\"\"\n\n    display_name: str = \"Kev Question Result Extractor\"\n    description: str = (\n        \"Selects a single question_id from 'Kev System 1 Core Engine' results so you can \"\n        \"wire each parallel question to its own downstream Conditional Router.\"\n    )\n    icon: str = \"Split\"\n    name: str = \"KevQuestionResultExtractor\"\n\n    inputs = [\n        DataInput(\n            name=\"decisions_data\",\n            display_name=\"All Decisions Data (From Core Engine)\",\n            info=\"Connect the 'All Decisions Data' output from Kev System 1 Core Engine.\",\n            required=True,\n        ),\n        StrInput(\n            name=\"target_question_id\",\n            display_name=\"Target Question ID\",\n            value=\"severity\",\n            info=\"Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').\",\n            required=True,\n        ),\n        DropdownInput(\n            name=\"extract_field\",\n            display_name=\"Route Message Field\",\n            options=[\n                \"route_label\",\n                \"raw_decision\",\n                \"score_custom_scaled\",\n                \"score_normalized_pct\",\n                \"score_native\",\n                \"nearest_level_tag\",\n                \"peak_level_tag\",\n                \"policy_lane\",\n            ],\n            value=\"route_label\",\n            info=\"Determines which value is emitted as text on the 'Question Route' port.\",\n        ),\n    ]\n\n    outputs = [\n        Output(\n            display_name=\"Question Route / Value\",\n            name=\"question_route\",\n            method=\"extract_route_message\",\n            group_outputs=True,\n        ),\n        Output(\n            display_name=\"Question Details Data\",\n            name=\"question_details\",\n            method=\"extract_question_data\",\n            group_outputs=True,\n        ),\n    ]\n\n    def _get_target_evaluation(self) -> dict[str, Any]:\n        raw = self.decisions_data\n        payload = raw.data if hasattr(raw, \"data\") and isinstance(raw.data, dict) else raw\n        if not isinstance(payload, dict) or \"evaluations\" not in payload:\n            raise ValueError(\n                \"Invalid input on 'All Decisions Data'. Connect the 'All Decisions Data' port \"\n                \"from Kev System 1 Core Engine.\"\n            )\n\n        evaluations: dict[str, dict[str, Any]] = payload[\"evaluations\"]\n        target_id = (self.target_question_id or \"\").strip()\n        if not target_id:\n            first_id = next(iter(evaluations.keys()))\n            return evaluations[first_id]\n\n        if target_id not in evaluations:\n            available = \", \".join(evaluations.keys())\n            raise ValueError(\n                f\"Question ID '{target_id}' not found in Core Engine results. \"\n                f\"Available Question IDs: [{available}]\"\n            )\n        return evaluations[target_id]\n\n    def extract_route_message(self) -> Message:\n        ev = self._get_target_evaluation()\n        field = self.extract_field or \"route_label\"\n        field_map = {\n            \"route_label\": ev.get(\"route_label\"),\n            \"raw_decision\": ev.get(\"raw_decision\"),\n            \"score_custom_scaled\": ev.get(\"score_custom_scaled\"),\n            \"score_normalized_pct\": ev.get(\"score_normalized_pct\"),\n            \"score_native\": ev.get(\"score_native\"),\n            \"nearest_level_tag\": ev.get(\"nearest_level_tag\"),\n            \"peak_level_tag\": ev.get(\"peak_level_tag\"),\n            \"policy_lane\": ev.get(\"lane\"),\n        }\n        val = field_map.get(field, ev.get(\"route_label\"))\n        text_val = json.dumps(val) if isinstance(val, (dict, list)) else str(val if val is not None else \"\")\n        self.status = f\"{ev['question_id']} ({field}) -> {text_val}\"\n        return Message(text=text_val, sender=\"KevExtractor\", sender_name=f\"Kev [{ev['question_id']}]\")\n\n    def extract_question_data(self) -> Data:\n        ev = self._get_target_evaluation()\n        return Data(data=ev, text_key=\"route_label\")",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "extract_field": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "route_label",
+                  "raw_decision",
+                  "score_custom_scaled",
+                  "score_normalized_pct",
+                  "score_native",
+                  "nearest_level_tag",
+                  "peak_level_tag",
+                  "policy_lane"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "extract_field",
+                "value": "winning_item_name",
+                "display_name": "Route Message Field",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Determines which value is emitted as text on the 'Question Route' port.",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "target_question_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "target_question_id",
+                "value": "weighted_score",
+                "display_name": "Target Question ID",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "Exact Question ID to extract (e.g., 'department', 'severity', 'requests_refund').",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              }
+            },
+            "description": "Selects a single question_id from 'Kev System 1 Core Engine' results so you can wire each parallel question to its own downstream Conditional Router.",
+            "icon": "Split",
+            "base_classes": [
+              "JSON",
+              "Message"
+            ],
+            "display_name": "JEV Question Result Extractor",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "question_route",
+                "hidden": null,
+                "display_name": "Question Route / Value",
+                "method": "extract_route_message",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "question_details",
+                "hidden": null,
+                "display_name": "Question Details Data",
+                "method": "extract_question_data",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "required_inputs": null,
+                "allows_loop": false,
+                "loop_types": null,
+                "group_outputs": true,
+                "options": null,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "decisions_data",
+              "target_question_id",
+              "extract_field"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": true,
+            "metadata": {
+              "component_class_name": "KevQuestionResultExtractor",
+              "module": "custom_components.kev_question_result_extractor",
+              "code_hash": "d903a3ff9d91",
+              "dependencies": {
+                "total_dependencies": 1,
+                "dependencies": [
+                  {
+                    "name": "lfx",
+                    "version": "1.13.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "official": false
+          }
+        },
+        "id": "extractor-score-1",
+        "position": {
+          "x": 1100,
+          "y": 750
+        },
+        "type": "genericNode"
+      }
+    ],
+    "edges": [
+      {
+        "source": "choice-node-1",
+        "target": "noul-node-1",
+        "sourceHandle": "choice-node-1-output-question_spec_out-JSON",
+        "targetHandle": "noul-node-1-input-upstream_questions-other",
+        "data": {
+          "sourceHandle": {
+            "name": "question_spec_out"
+          },
+          "targetHandle": {
+            "name": "upstream_questions"
+          }
+        }
+      },
+      {
+        "source": "noul-node-1",
+        "target": "score-node-1",
+        "sourceHandle": "noul-node-1-output-question_spec_out-JSON",
+        "targetHandle": "score-node-1-input-upstream_questions-other",
+        "data": {
+          "sourceHandle": {
+            "name": "question_spec_out"
+          },
+          "targetHandle": {
+            "name": "upstream_questions"
+          }
+        }
+      },
+      {
+        "source": "score-node-1",
+        "target": "engine-node-1",
+        "sourceHandle": "score-node-1-output-question_spec_out-JSON",
+        "targetHandle": "engine-node-1-input-question_specs-other",
+        "data": {
+          "sourceHandle": {
+            "name": "question_spec_out"
+          },
+          "targetHandle": {
+            "name": "question_specs"
+          }
+        }
+      },
+      {
+        "source": "engine-node-1",
+        "target": "extractor-choice-1",
+        "sourceHandle": "engine-node-1-output-all_decisions_data-JSON",
+        "targetHandle": "extractor-choice-1-input-decisions_data-other",
+        "data": {
+          "sourceHandle": {
+            "name": "all_decisions_data"
+          },
+          "targetHandle": {
+            "name": "decisions_data"
+          }
+        }
+      },
+      {
+        "source": "engine-node-1",
+        "target": "extractor-noul-1",
+        "sourceHandle": "engine-node-1-output-all_decisions_data-JSON",
+        "targetHandle": "extractor-noul-1-input-decisions_data-other",
+        "data": {
+          "sourceHandle": {
+            "name": "all_decisions_data"
+          },
+          "targetHandle": {
+            "name": "decisions_data"
+          }
+        }
+      },
+      {
+        "source": "engine-node-1",
+        "target": "extractor-score-1",
+        "sourceHandle": "engine-node-1-output-all_decisions_data-JSON",
+        "targetHandle": "extractor-score-1-input-decisions_data-other",
+        "data": {
+          "sourceHandle": {
+            "name": "all_decisions_data"
+          },
+          "targetHandle": {
+            "name": "decisions_data"
+          }
+        }
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    }
+  }
+}
